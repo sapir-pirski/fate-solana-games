@@ -30,6 +30,37 @@ import { useEffect, useMemo, useState } from "react";
 type View = "jackpot" | "coinflip" | "daily" | "history";
 type Toast = { title: string; text: string } | null;
 
+type LogInput = {
+  eventType: string;
+  category: "navigation" | "wallet" | "gameplay" | "transaction" | "system";
+  status?: "info" | "pending" | "success" | "failure";
+  gameType?: View;
+  gameId?: string;
+  amountLamports?: number;
+  transactionSignature?: string;
+  metadata?: Record<string, string | number | boolean>;
+};
+
+function getSessionId() {
+  const key = "fate_session_id";
+  let value = sessionStorage.getItem(key);
+  if (!value) {
+    value = crypto.randomUUID();
+    sessionStorage.setItem(key, value);
+  }
+  return value;
+}
+
+function writeLog(input: LogInput) {
+  const body = JSON.stringify({ ...input, sessionId: getSessionId() });
+  void fetch("/api/logs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 const entrants = [
   { wallet: "7cXq...2Kp9", amount: 3.42, color: "#c8ff4d", ago: "just now" },
   { wallet: "F4te...91sL", amount: 1.8, color: "#8b5cf6", ago: "8s ago" },
@@ -177,7 +208,10 @@ function ToastView({ toast, close }: { toast: Toast; close: () => void }) { retu
 
 export default function Home() {
   const [view,setView]=useState<View>("jackpot"); const [connected,setConnected]=useState(false); const [toast,setToast]=useState<Toast>(null);
-  const notify=(t:Toast)=>{setToast(t);setTimeout(()=>setToast(null),3200)};
-  const connect=()=>{setConnected(v=>!v);notify(connected?{title:"Wallet disconnected",text:"Connect again whenever you’re ready."}:{title:"Wallet connected",text:"7cXq...2Kp9 · 24.82 SOL available"});};
+  useEffect(() => {
+    writeLog({ eventType: "page_view", category: "navigation", gameType: view, status: "info" });
+  }, [view]);
+  const notify=(t:Toast)=>{setToast(t);if(t)writeLog({eventType:"game_interaction",category:"gameplay",gameType:view,status:"success",metadata:{action:t.title}});setTimeout(()=>setToast(null),3200)};
+  const connect=()=>{const next=!connected;setConnected(next);writeLog({eventType:next?"wallet_connected":"wallet_disconnected",category:"wallet",status:"success",metadata:{provider:"demo_wallet"}});notify(next?{title:"Wallet connected",text:"7cXq...2Kp9 · 24.82 SOL available"}:{title:"Wallet disconnected",text:"Connect again whenever you’re ready."});};
   return <div className="app-shell"><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connect={connect}/><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> Mainnet</span></div></footer><ToastView toast={toast} close={()=>setToast(null)}/></div>;
 }
