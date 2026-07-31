@@ -41,10 +41,20 @@ export async function ensureEventLogSchema() {
       d1.prepare("CREATE INDEX IF NOT EXISTS event_logs_wallet_created_idx ON event_logs (wallet_address, created_at)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS event_logs_game_created_idx ON event_logs (game_type, game_id, created_at)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS event_logs_tx_signature_idx ON event_logs (transaction_signature)"),
-    ]).catch((error) => {
+    ]).catch((error: unknown) => {
       eventLogSchemaReady = null;
       throw error;
     });
   }
   await eventLogSchemaReady;
+}
+
+export async function pruneEventLogs(retentionDays: number) {
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) {
+    throw new Error("Invalid event log retention period.");
+  }
+  await env.DB.prepare("DELETE FROM event_logs WHERE created_at < datetime('now', ?)")
+    .bind(`-${retentionDays} days`)
+    .run();
 }
