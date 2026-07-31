@@ -25,6 +25,7 @@ function isCompatible(wallet: Wallet): wallet is CompatibleWallet {
 }
 
 export function useSolanaWallet() {
+  const [availableWallets, setAvailableWallets] = useState<CompatibleWallet[]>([]);
   const [wallet, setWallet] = useState<CompatibleWallet | null>(null);
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
@@ -50,13 +51,22 @@ export function useSolanaWallet() {
     }
   }, [account, rpcUrl]);
 
-  const connect = useCallback(async () => {
+  useEffect(() => {
+    const registry = getWallets();
+    const update = () => setAvailableWallets(registry.get().filter(isCompatible));
+    update();
+    const offRegister = registry.on("register", update);
+    const offUnregister = registry.on("unregister", update);
+    return () => { offRegister(); offUnregister(); };
+  }, []);
+
+  const connect = useCallback(async (walletName?: string) => {
     setConnecting(true);
     setError(null);
     try {
       const wallets = getWallets().get().filter(isCompatible);
       if (!wallets.length) throw new Error("No compatible Solana wallet was found. Install Phantom, Backpack, or Solflare.");
-      const selected = wallets.find(candidate => /phantom/i.test(candidate.name)) ?? wallets[0];
+      const selected = wallets.find(candidate => candidate.name === walletName) ?? wallets.find(candidate => /phantom/i.test(candidate.name)) ?? wallets[0];
       const output = await selected.features[StandardConnect].connect();
       const nextAccount = output.accounts.find(item => item.chains.includes(CHAIN as `${string}:${string}`)) ?? output.accounts[0];
       if (!nextAccount) throw new Error("The wallet did not authorize a Solana account.");
@@ -97,6 +107,7 @@ export function useSolanaWallet() {
   }, [account, refreshBalance]);
 
   return {
+    wallets: availableWallets.map(item => ({ name: item.name, icon: item.icon })),
     account,
     address: account?.address ?? null,
     balance,

@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion, useSpring, useTransform } from "framer-motion";
+import Image from "next/image";
 import {
   ArrowUpRight,
   Check,
@@ -13,6 +14,7 @@ import {
   Flame,
   Gift,
   History,
+  LoaderCircle,
   Menu,
   ShieldCheck,
   Sparkles,
@@ -31,6 +33,7 @@ import { useSolanaWallet } from "./solana/useWallet";
 
 type View = "jackpot" | "coinflip" | "daily" | "history";
 type Toast = { title: string; text: string } | null;
+type WalletOption = { name: string; icon: string };
 
 const GameCoin3D = lazy(() => import("./animations/GameCoin3D"));
 const DailyCase3D = lazy(() => import("./animations/DailyCase3D"));
@@ -131,7 +134,7 @@ function Fairness({ hash = "A7f3...9c2B" }: { hash?: string }) {
     <div className="fairness-title"><ShieldCheck size={18} /><span>Provably fair</span><small>ON-CHAIN</small></div>
     <p>Every outcome is generated and verified on Solana. No hidden odds. No trust required.</p>
     <div className="hash"><code>{hash}</code><button onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy hash">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div>
-    <button className="text-link">How fairness works <ArrowUpRight size={14} /></button>
+    <details className="fairness-details"><summary>How fairness works <ArrowUpRight size={14} /></summary><p>Each wager is held by a program-owned vault. The published randomness value selects the result, and the settlement event can be independently checked against the transaction.</p></details>
   </div>;
 }
 
@@ -170,7 +173,7 @@ function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConne
       </div>
 
       <div className="card live-card">
-        <div className="card-title"><div><Flame size={18} /><strong>Live entries</strong></div><span><i /> Updating live</span></div>
+        <div className="card-title"><div><Flame size={18} /><strong>Live entries</strong></div><span className="demo-state">DEMO DATA</span></div>
         <div className="entries">
           {entrants.map((e, i) => <motion.div className="entry" key={e.wallet} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * .08 }}>
             <div className="avatar" style={{ "--avatar": e.color } as React.CSSProperties}>{e.wallet[0]}</div>
@@ -198,7 +201,7 @@ function Coinflip({ connected, onConnect, notify }: { connected: boolean; onConn
     <div className="page-heading"><div><div className="eyebrow"><Swords size={14}/> PLAYER VS PLAYER</div><h1>Call it.<br/><em>Double it.</em></h1><p>Pick a side, set the stakes, and challenge another player. One flip. Winner takes all.</p></div><div className="big-coin">{reduceMotion||!webglReady?<div className={side === "Heads" ? "coin-face heads" : "coin-face tails"}><Mark small /></div>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><GameCoin3D side={side}/></Suspense>}<span className="orbit one"/><span className="orbit two"/></div></div>
     <div className="coin-grid">
       <div className="card create-card"><div className="card-title"><div><Sparkles size={18}/><strong>Create a flip</strong></div><span>1v1</span></div><label>Choose your side</label><div className="side-picker"><button className={side === "Heads" ? "active" : ""} onClick={() => setSide("Heads")}><div className="mini-coin">F</div><strong>Heads</strong><span>Violet side</span></button><button className={side === "Tails" ? "active tails" : ""} onClick={() => setSide("Tails")}><div className="mini-coin lime">◎</div><strong>Tails</strong><span>Lime side</span></button></div><label>Wager amount</label><div className="amount-input"><SolIcon/><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}/><span>SOL</span></div><div className="presets">{["0.25","0.50","1.00","2.50"].map(v=><button key={v} className={amount===v?"selected":""} onClick={()=>setAmount(v)}>{v}</button>)}</div><button className="primary" onClick={()=>action("Coinflip created")}>{connected ? <><Swords size={18}/> Create {side.toLowerCase()} flip · {amount} SOL</> : <><Wallet size={18}/> Connect wallet to play</>}</button></div>
-      <div className="card active-flips"><div className="card-title"><div><Flame size={18}/><strong>Open challenges</strong></div><span><i/> {flips.length} live</span></div>{flips.map((f,i)=><motion.div className="flip-row" key={f.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.08}}><div className={`mini-coin ${f.side === "Tails" ? "lime":""}`}>{f.side === "Heads" ? "F":"◎"}</div><div><strong>{f.wallet}</strong><span>{f.id} · {f.age} ago</span></div><b><SolIcon/> {f.amount.toFixed(2)}</b><button onClick={()=>action(`Joining ${f.id}`)}>Join</button></motion.div>)}<div className="active-footer"><ShieldCheck size={15}/> Funds escrowed on-chain until the flip settles</div></div>
+      <div className="card active-flips"><div className="card-title"><div><Flame size={18}/><strong>Open challenges</strong></div><span className="demo-state">DEMO DATA</span></div>{flips.map((f,i)=><motion.div className="flip-row" key={f.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.08}}><div className={`mini-coin ${f.side === "Tails" ? "lime":""}`}>{f.side === "Heads" ? "F":"◎"}</div><div><strong>{f.wallet}</strong><span>{f.id} · {f.age} ago</span></div><b><SolIcon/> {f.amount.toFixed(2)}</b><button onClick={()=>action(`Joining ${f.id}`)}>Join</button></motion.div>)}<div className="active-footer"><ShieldCheck size={15}/> Funds escrowed on-chain until the flip settles</div></div>
     </div>
     <section className="bottom-grid"><Fairness hash="Cf92...D81e"/><div className="card recent-results"><div className="card-title"><div><History size={18}/><strong>Recent flips</strong></div><button className="text-link">View all</button></div><div className="result-row"><span className="win-tag">W</span><strong>3Qm8...pL0f</strong><span>beat</span><strong>Bm72...3kAi</strong><b>+4.85 SOL</b></div><div className="result-row"><span className="loss-tag">L</span><strong>9cV1...Sa2z</strong><span>lost to</span><strong>Rr44...Uo19</strong><b>−0.50 SOL</b></div></div></section>
   </motion.main>;
@@ -220,8 +223,13 @@ function HistoryPage() {
 
 function ToastView({ toast, close }: { toast: Toast; close: () => void }) { return <AnimatePresence>{toast&&<motion.div className="toast" initial={{opacity:0,y:20,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:10}}><div><Check size={18}/></div><p><strong>{toast.title}</strong><span>{toast.text}</span></p><button onClick={close}><X size={16}/></button></motion.div>}</AnimatePresence>; }
 
+function WalletModal({ open, wallets, connecting, close, select }: { open: boolean; wallets: WalletOption[]; connecting: boolean; close: () => void; select: (name: string) => void }) {
+  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" initial={{opacity:0,y:18,scale:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}><div className="modal-head"><div><span>FATE · DEVNET</span><h2 id="wallet-title">Connect a wallet</h2></div><button onClick={close} aria-label="Close wallet picker"><X size={18}/></button></div><p>Select an installed Solana wallet. FATE never asks for your seed phrase or private key.</p><div className="wallet-list">{wallets.length?wallets.map(option=><button key={option.name} disabled={connecting} onClick={()=>select(option.name)}><Image unoptimized width={38} height={38} src={option.icon} alt=""/><span><strong>{option.name}</strong><small>Detected · Wallet Standard</small></span>{connecting?<LoaderCircle className="spin" size={18}/>:<ChevronRight size={18}/>}</button>):<div className="wallet-empty"><Wallet size={24}/><strong>No wallet detected</strong><span>Install Phantom, Backpack, or Solflare, then refresh this page.</span></div>}</div><div className="modal-network"><i/> Solana Devnet <span>No real-value wagers</span></div></motion.section></motion.div>}</AnimatePresence>;
+}
+
 export default function Home() {
   const [view,setView]=useState<View>("jackpot"); const [toast,setToast]=useState<Toast>(null);
+  const [walletPicker,setWalletPicker]=useState(false);
   const wallet = useSolanaWallet();
   const connected = wallet.connected;
   const [sound,setSound]=useState(()=>typeof window !== "undefined" && localStorage.getItem("fate_sound")==="on"); const audioContext=useRef<AudioContext|null>(null);
@@ -230,7 +238,8 @@ export default function Home() {
     logEvent({ eventType: "page_view", category: "navigation", gameType: view, status: "info" });
   }, [view]);
   const notify=(t:Toast)=>{setToast(t);if(t){playTone(t.title.includes("unlocked")||t.title.includes("connected")?"success":"tap",sound,audioContext);logEvent({eventType:"game_interaction",category:"gameplay",gameType:view,status:"success",metadata:{action:t.title}})}setTimeout(()=>setToast(null),3200)};
-  const connect=()=>{if(connected){void wallet.disconnect();logEvent({eventType:"wallet_disconnected",category:"wallet",status:"success",walletAddress:wallet.address??undefined});notify({title:"Wallet disconnected",text:"Connect again whenever you’re ready."});return;}void wallet.connect().then(()=>{logEvent({eventType:"wallet_connected",category:"wallet",status:"success",walletAddress:wallet.address??undefined,metadata:{standard:"wallet_standard",cluster:wallet.cluster}});notify({title:"Wallet connected",text:"Your Solana account is ready."});}).catch((cause:unknown)=>{const text=cause instanceof Error?cause.message:"Wallet connection failed.";logEvent({eventType:"wallet_connection_failed",category:"wallet",status:"failure",metadata:{reason:text.slice(0,120)}});notify({title:"Could not connect",text});});};
+  const connect=()=>{if(connected){void wallet.disconnect();logEvent({eventType:"wallet_disconnected",category:"wallet",status:"success",walletAddress:wallet.address??undefined});notify({title:"Wallet disconnected",text:"Connect again whenever you’re ready."});return;}setWalletPicker(true);};
+  const selectWallet=(name:string)=>{void wallet.connect(name).then(()=>{setWalletPicker(false);logEvent({eventType:"wallet_connected",category:"wallet",status:"success",metadata:{standard:"wallet_standard",cluster:wallet.cluster,wallet:name}});notify({title:"Wallet connected",text:"Your Solana devnet account is ready."});}).catch((cause:unknown)=>{const text=cause instanceof Error?cause.message:"Wallet connection failed.";logEvent({eventType:"wallet_connection_failed",category:"wallet",status:"failure",metadata:{reason:text.slice(0,120)}});notify({title:"Could not connect",text});});};
   const toggleSound=()=>{const next=!sound;setSound(next);localStorage.setItem("fate_sound",next?"on":"off");playTone("tap",next,audioContext)};
-  return <div className="app-shell"><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><ToastView toast={toast} close={()=>setToast(null)}/></div>;
+  return <div className={`app-shell game-${view}`}><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><div className="environment-banner"><span><i/> SOLANA DEVNET</span><p>Engineering preview · Demo game data · No real-value wagers</p></div><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><WalletModal open={walletPicker} wallets={wallet.wallets} connecting={wallet.connecting} close={()=>!wallet.connecting&&setWalletPicker(false)} select={selectWallet}/><ToastView toast={toast} close={()=>setToast(null)}/></div>;
 }
