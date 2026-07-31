@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ID="${NEBIUS_PROJECT_ID:-project-e00as93cpr00f0f9z68ph2}"
+PROJECT_ID="${NEBIUS_PROJECT_ID:-project-e00sv4bvpr00wr5e5kr9xr}"
 REGISTRY_ID="${NEBIUS_REGISTRY_ID:?Set NEBIUS_REGISTRY_ID}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 IMAGE="cr.eu-north1.nebius.cloud/${REGISTRY_ID}/fate-platform:${IMAGE_TAG}"

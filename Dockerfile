@@ -1,9 +1,9 @@
 FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
-COPY package.json package-lock.json ./
-# npm 10 cannot consume npm 11's platform-specific optional-dependency lock
-# entries with `npm ci`; regular install still honors the committed versions.
-RUN npm install --no-audit --no-fund
+COPY package.json ./
+# The development lockfile contains host-specific optional packages produced by
+# npm 11. Resolve the Linux image directly from the pinned manifest instead.
+RUN npm install --package-lock=false --no-audit --no-fund
 
 FROM dependencies AS build
 COPY . .
