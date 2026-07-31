@@ -1,98 +1,66 @@
-# vinext-starter
+# FATE — Solana games
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+FATE is a responsive Solana gaming platform for Jackpot, Coinflip, and Daily Case. The repository contains the animated web application, an Anchor on-chain program, durable event and financial schemas, and CI checks.
 
-## Prerequisites
+> Status: devnet engineering build. The UI is usable locally, wallet connection is real, and the on-chain program compiles and passes its unit tests. Do not use real-value funds before audit, legal review, production VRF integration, and a controlled mainnet deployment.
 
-- Node.js `>=22.13.0`
+## Architecture
 
-## Quick Start
+- `app/`: React 19/Vinext interface, Wallet Standard connection, 3D and reduced-motion experiences, and batched offline-capable product logging.
+- `programs/fate-games/`: Anchor program with PDA state, escrow vaults, Jackpot and Coinflip settlement, Daily Case rewards, timeout recovery, pause controls, and event emission.
+- `db/`: D1/Drizzle models for append-only product logs, canonical chain events, game projections, entries, transaction intents, and indexer checkpoints.
+- `drizzle/`: versioned database migrations.
+- `.github/workflows/ci.yml`: repeatable web and Rust checks.
+
+## Run locally
+
+Prerequisites: Node.js 22+, npm, and stable Rust. Copy `.env.example` to `.env.local`, keep the cluster on devnet, then run:
 
 ```bash
 npm install
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Open `http://localhost:3000`. Install a Wallet Standard-compatible Solana wallet and switch it to devnet to connect. A missing wallet produces an explicit error instead of a simulated connection.
 
-## Included Shape
+## Validate
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm run lint
+npm test
+cargo fmt --all -- --check
+cargo test --workspace --locked
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+`npm test` performs a production web build before the logging-policy tests. Rust tests cover weighted jackpot selection, fee calculations, and reward tiers; full validator tests should be added alongside the selected VRF adapter before deployment.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## On-chain safety model
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+- Each game and vault is a deterministic PDA.
+- SOL wagers are held by program-owned accounts rather than an application wallet.
+- Outcomes can only be settled by the configured randomness authority boundary.
+- Jackpot settlement selects a winner proportional to deposited lamports.
+- Coinflips refund both players if randomness times out; Jackpots switch to wallet-claimed refunds after timeout.
+- Arithmetic is checked, wagers and fees are bounded, and state transitions are explicit.
+- Administration supports pause and two-step authority transfer.
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+The randomness authority is deliberately an adapter boundary, not a claim that server-generated randomness is sufficient. Bind it to audited VRF fulfillment before launch.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+## Data and logging
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+Product events are queued in IndexedDB, flushed asynchronously in bounded batches, retried with exponential backoff and jitter, deduplicated by UUID, and retained for 90 days. Logs exclude secrets, signatures, raw user agents, and IP-derived fields.
 
-## Useful Commands
+Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_intents` supports pending/confirmed/failed recovery; `indexer_checkpoints` records consumer progress and health.
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+Run `npm run db:generate` after schema changes. Apply generated migrations through the hosting environment before enabling indexer writes.
 
-## Learn More
+## Deployment gates
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+1. Install the Solana/Anchor deployment toolchain and generate a dedicated program keypair.
+2. Integrate and test an audited VRF provider on a local validator and devnet.
+3. Add end-to-end validator tests, economic fuzzing, and keeper/indexer replay tests.
+4. Deploy to devnet, initialize config/vault PDAs, and verify program bytes.
+5. Complete independent security and legal reviews.
+6. Move authorities to multisig, configure production RPC/monitoring, and only then consider mainnet.
+
+See [SECURITY.md](SECURITY.md) for the launch security requirements.

@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "1.0.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+fate_games = "Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ"
+
+[provider]
+cluster = "Localnet"
+wallet = ".anchor/deployer.json"
+
+[scripts]
+test = "cargo test --workspace"
