@@ -10,11 +10,11 @@ import {
   type StandardDisconnectFeature,
   type StandardEventsFeature,
 } from "@wallet-standard/features";
-import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CHAIN = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
+const LAMPORTS_PER_SOL = 1_000_000_000;
 
 type CompatibleWallet = Wallet & StandardConnectFeature & Partial<StandardDisconnectFeature & StandardEventsFeature>;
 
@@ -30,17 +30,25 @@ export function useSolanaWallet() {
   const [balance, setBalance] = useState<number | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const connection = useMemo(() => new Connection(RPC_URL, "confirmed"), []);
+  const rpcUrl = useMemo(() => RPC_URL, []);
 
   const refreshBalance = useCallback(async (nextAccount = account) => {
     if (!nextAccount) return setBalance(null);
     try {
-      const lamports = await connection.getBalance(new PublicKey(nextAccount.address), "confirmed");
+      const response = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method: "getBalance", params: [nextAccount.address, { commitment: "confirmed" }] }),
+      });
+      if (!response.ok) throw new Error("RPC balance request failed.");
+      const payload = await response.json() as { result?: { value?: number }; error?: unknown };
+      const lamports = payload.result?.value;
+      if (!Number.isSafeInteger(lamports)) throw new Error("RPC returned an invalid balance.");
       setBalance(lamports / LAMPORTS_PER_SOL);
     } catch {
       setBalance(null);
     }
-  }, [account, connection]);
+  }, [account, rpcUrl]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -101,4 +109,3 @@ export function useSolanaWallet() {
     refreshBalance,
   };
 }
-
