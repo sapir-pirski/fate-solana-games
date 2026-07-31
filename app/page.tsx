@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion, useSpring, useTransform } from "framer-motion";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -21,15 +21,20 @@ import {
   Swords,
   Trophy,
   Users,
+  Volume2,
+  VolumeX,
   Wallet,
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { logEvent, startLogging } from "./logging-client";
 
 type View = "jackpot" | "coinflip" | "daily" | "history";
 type Toast = { title: string; text: string } | null;
+
+const GameCoin3D = lazy(() => import("./animations/GameCoin3D"));
+const DailyCase3D = lazy(() => import("./animations/DailyCase3D"));
 
 const entrants = [
   { wallet: "7cXq...2Kp9", amount: 3.42, color: "#c8ff4d", ago: "just now" },
@@ -60,7 +65,35 @@ function SolIcon() {
   return <span className="sol-icon">◎</span>;
 }
 
-function Header({ view, setView, connected, connect }: { view: View; setView: (v: View) => void; connected: boolean; connect: () => void }) {
+function AnimatedNumber({ value, decimals = 2 }: { value: number; decimals?: number }) {
+  const source = useSpring(0, { stiffness: 65, damping: 18, mass: 0.8 });
+  const display = useTransform(source, current => current.toFixed(decimals));
+  useEffect(() => { source.set(value); }, [source, value]);
+  return <motion.span>{display}</motion.span>;
+}
+
+function ParticleField() {
+  const particles = useMemo(() => Array.from({ length: 22 }, (_, i) => ({
+    left: `${(i * 43) % 97}%`, top: `${18 + (i * 29) % 72}%`, delay: (i % 8) * 0.33,
+    size: 2 + (i % 3), color: i % 4 === 0 ? "#c8ff4d" : i % 3 === 0 ? "#53e7ff" : "#8b5cf6",
+  })), []);
+  return <div className="particle-field" aria-hidden="true">{particles.map((p, i) => <motion.i key={i} style={{ left: p.left, top: p.top, width: p.size, height: p.size, background: p.color }} animate={{ y: [0, -18, 0], opacity: [.08, .75, .08], scale: [.7, 1.4, .7] }} transition={{ duration: 3.2 + (i % 4), delay: p.delay, repeat: Infinity, ease: "easeInOut" }}/>)}</div>;
+}
+
+function playTone(kind: "tap" | "success", enabled: boolean, contextRef: React.MutableRefObject<AudioContext | null>) {
+  if (!enabled || typeof window === "undefined") return;
+  try {
+    const context = contextRef.current ?? new AudioContext(); contextRef.current = context;
+    const oscillator = context.createOscillator(); const gain = context.createGain();
+    oscillator.type = kind === "success" ? "sine" : "triangle";
+    oscillator.frequency.setValueAtTime(kind === "success" ? 520 : 260, context.currentTime);
+    if (kind === "success") oscillator.frequency.exponentialRampToValueAtTime(920, context.currentTime + .16);
+    gain.gain.setValueAtTime(.0001, context.currentTime); gain.gain.exponentialRampToValueAtTime(.055, context.currentTime + .015); gain.gain.exponentialRampToValueAtTime(.0001, context.currentTime + .22);
+    oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + .24);
+  } catch { /* Sound is enhancement-only. */ }
+}
+
+function Header({ view, setView, connected, connect, sound, toggleSound }: { view: View; setView: (v: View) => void; connected: boolean; connect: () => void; sound: boolean; toggleSound: () => void }) {
   const [mobile, setMobile] = useState(false);
   const nav: { key: View; label: string }[] = [
     { key: "jackpot", label: "Jackpot" }, { key: "coinflip", label: "Coinflip" },
@@ -73,6 +106,7 @@ function Header({ view, setView, connected, connect }: { view: View; setView: (v
     </nav>
     <div className="wallet-area">
       {connected && <div className="balance"><span>Balance</span><strong><SolIcon /> 24.82 SOL</strong></div>}
+      <button className="sound-toggle" onClick={toggleSound} aria-label={sound ? "Mute game sounds" : "Enable game sounds"}>{sound ? <Volume2 size={16}/> : <VolumeX size={16}/>}</button>
       <button className={`connect ${connected ? "connected" : ""}`} onClick={connect}>{connected ? <><span className="online" /> 7cXq...2Kp9</> : <><Wallet size={17} /> Connect wallet</>}</button>
       <button className="menu" onClick={() => setMobile(!mobile)} aria-label="Toggle navigation">{mobile ? <X /> : <Menu />}</button>
     </div>
@@ -106,7 +140,7 @@ function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConne
     if (!Number(amount)) return notify({ title: "Enter an amount", text: "Choose how much SOL you want to add." });
     notify({ title: "Entry ready", text: `${amount} SOL transaction prepared for your wallet.` });
   };
-  return <motion.main key="jackpot" className="page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+  return <motion.main key="jackpot" className="page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><ParticleField />
     <section className="jackpot-hero">
       <div className="eyebrow"><span className="pulse" /> LIVE ROUND <span>#1,295</span></div>
       <h1>One pot.<br/><em>One winner.</em></h1>
@@ -120,7 +154,7 @@ function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConne
 
     <section className="jackpot-grid">
       <div className="card pot-card">
-        <div className="card-head"><div><span className="kicker">CURRENT POT</span><h2><SolIcon /> 8.49 <small>SOL</small></h2></div><div className="chance-ring" style={{ "--chance": `${chance * 3.6}deg` } as React.CSSProperties}><div><strong>{chance.toFixed(1)}%</strong><span>YOUR CHANCE</span></div></div></div>
+        <div className="card-head"><div><span className="kicker">CURRENT POT</span><h2><SolIcon /> <AnimatedNumber value={8.49}/> <small>SOL</small></h2></div><div className="chance-ring" style={{ "--chance": `${chance * 3.6}deg` } as React.CSSProperties}><div><strong>{chance.toFixed(1)}%</strong><span>YOUR CHANCE</span></div></div></div>
         <div className="pot-line">{entrants.map((e, i) => <span key={e.wallet} style={{ width: `${[40, 27, 19, 14][i]}%`, background: e.color }} />)}</div>
         <div className="entry-label"><span>Your entry</span><span>Available: {connected ? "24.82" : "—"} SOL</span></div>
         <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Entry amount"/><span>SOL</span><button onClick={() => setAmount(connected ? "24.82" : "1.00")}>MAX</button></div>
@@ -151,9 +185,12 @@ function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConne
 function Coinflip({ connected, onConnect, notify }: { connected: boolean; onConnect: () => void; notify: (t: Toast) => void }) {
   const [side, setSide] = useState<"Heads" | "Tails">("Heads");
   const [amount, setAmount] = useState("1.00");
+  const [webglReady, setWebglReady] = useState(false);
+  const reduceMotion = useReducedMotion();
+  useEffect(() => setWebglReady(true), []);
   const action = (text: string) => connected ? notify({ title: text, text: "Transaction prepared for wallet approval." }) : onConnect();
   return <motion.main key="coinflip" className="page subpage" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-    <div className="page-heading"><div><div className="eyebrow"><Swords size={14}/> PLAYER VS PLAYER</div><h1>Call it.<br/><em>Double it.</em></h1><p>Pick a side, set the stakes, and challenge another player. One flip. Winner takes all.</p></div><div className="big-coin"><div className={side === "Heads" ? "coin-face heads" : "coin-face tails"}><Mark small /></div><span className="orbit one"/><span className="orbit two"/></div></div>
+    <div className="page-heading"><div><div className="eyebrow"><Swords size={14}/> PLAYER VS PLAYER</div><h1>Call it.<br/><em>Double it.</em></h1><p>Pick a side, set the stakes, and challenge another player. One flip. Winner takes all.</p></div><div className="big-coin">{reduceMotion||!webglReady?<div className={side === "Heads" ? "coin-face heads" : "coin-face tails"}><Mark small /></div>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><GameCoin3D side={side}/></Suspense>}<span className="orbit one"/><span className="orbit two"/></div></div>
     <div className="coin-grid">
       <div className="card create-card"><div className="card-title"><div><Sparkles size={18}/><strong>Create a flip</strong></div><span>1v1</span></div><label>Choose your side</label><div className="side-picker"><button className={side === "Heads" ? "active" : ""} onClick={() => setSide("Heads")}><div className="mini-coin">F</div><strong>Heads</strong><span>Violet side</span></button><button className={side === "Tails" ? "active tails" : ""} onClick={() => setSide("Tails")}><div className="mini-coin lime">◎</div><strong>Tails</strong><span>Lime side</span></button></div><label>Wager amount</label><div className="amount-input"><SolIcon/><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}/><span>SOL</span></div><div className="presets">{["0.25","0.50","1.00","2.50"].map(v=><button key={v} className={amount===v?"selected":""} onClick={()=>setAmount(v)}>{v}</button>)}</div><button className="primary" onClick={()=>action("Coinflip created")}>{connected ? <><Swords size={18}/> Create {side.toLowerCase()} flip · {amount} SOL</> : <><Wallet size={18}/> Connect wallet to play</>}</button></div>
       <div className="card active-flips"><div className="card-title"><div><Flame size={18}/><strong>Open challenges</strong></div><span><i/> {flips.length} live</span></div>{flips.map((f,i)=><motion.div className="flip-row" key={f.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.08}}><div className={`mini-coin ${f.side === "Tails" ? "lime":""}`}>{f.side === "Heads" ? "F":"◎"}</div><div><strong>{f.wallet}</strong><span>{f.id} · {f.age} ago</span></div><b><SolIcon/> {f.amount.toFixed(2)}</b><button onClick={()=>action(`Joining ${f.id}`)}>Join</button></motion.div>)}<div className="active-footer"><ShieldCheck size={15}/> Funds escrowed on-chain until the flip settles</div></div>
@@ -164,8 +201,11 @@ function Coinflip({ connected, onConnect, notify }: { connected: boolean; onConn
 
 function DailyCase({ connected, onConnect, notify }: { connected: boolean; onConnect: () => void; notify: (t: Toast) => void }) {
   const [opening, setOpening] = useState(false); const [opened, setOpened] = useState(false);
+  const [webglReady, setWebglReady] = useState(false);
+  const reduceMotion = useReducedMotion();
+  useEffect(() => setWebglReady(true), []);
   const open = () => { if (!connected) return onConnect(); setOpening(true); setTimeout(() => { setOpening(false); setOpened(true); notify({title:"Reward unlocked",text:"0.25 SOL was credited to your wallet."});}, 1800); };
-  return <motion.main key="daily" className="page subpage" initial={{opacity:0}} animate={{opacity:1}}><div className="case-layout"><section className="case-copy"><div className="eyebrow"><Gift size={14}/> ONE FREE OPEN EVERY 24H</div><h1>Your daily<br/><em>shot at SOL.</em></h1><p>Open your free case. Your reward is generated on-chain and lands directly in your connected wallet.</p><div className="cooldown"><Clock3 size={18}/><div><span>NEXT FREE OPEN</span><strong>{opened ? "23:59:59" : "READY NOW"}</strong></div></div><div className="reward-list"><span>Possible rewards</span>{[0.01,0.05,0.10,0.25,1.00].map(v=><b key={v}><SolIcon/> {v.toFixed(2)}</b>)}</div></section><section className="case-stage"><div className={`case-box ${opening?"opening":""} ${opened?"opened":""}`}><div className="case-glow"/><div className="case-lid"><span>FATE</span></div><div className="case-body"><Gift size={56}/><span>DAILY</span></div>{opened&&<motion.div className="reward-pop" initial={{scale:.4,opacity:0}} animate={{scale:1,opacity:1}}><small>YOU UNLOCKED</small><strong><SolIcon/> 0.25 SOL</strong><span>Credited to wallet</span></motion.div>}</div><button className="primary case-button" disabled={opening||opened} onClick={open}>{opening?<><Sparkles size={18}/> Revealing on-chain...</>:opened?<><Check size={18}/> Come back tomorrow</>:connected?<><Gift size={18}/> Open free case</>:<><Wallet size={18}/> Connect wallet to open</>}</button><p className="case-note"><ShieldCheck size={14}/> No deposit required · Provably fair</p></section></div><section className="bottom-grid"><Fairness hash="Dc10...F44a"/><div className="card recent-results"><div className="card-title"><div><Clock3 size={18}/><strong>Your recent opens</strong></div><span>Last 3</span></div>{[["Yesterday","0.05"],["Jul 29","0.10"],["Jul 28","0.01"]].map(r=><div className="claim-row" key={r[0]}><div className="mini-case"><Gift size={16}/></div><strong>{r[0]}</strong><span>Daily case</span><b>+{r[1]} SOL</b></div>)}</div></section></motion.main>;
+  return <motion.main key="daily" className="page subpage" initial={{opacity:0}} animate={{opacity:1}}><div className="case-layout"><section className="case-copy"><div className="eyebrow"><Gift size={14}/> ONE FREE OPEN EVERY 24H</div><h1>Your daily<br/><em>shot at SOL.</em></h1><p>Open your free case. Your reward is generated on-chain and lands directly in your connected wallet.</p><div className="cooldown"><Clock3 size={18}/><div><span>NEXT FREE OPEN</span><strong>{opened ? "23:59:59" : "READY NOW"}</strong></div></div><div className="reward-list"><span>Possible rewards</span>{[0.01,0.05,0.10,0.25,1.00].map(v=><b key={v}><SolIcon/> {v.toFixed(2)}</b>)}</div></section><section className="case-stage"><div className={`case-box ${opening?"opening":""} ${opened?"opened":""}`}>{reduceMotion||!webglReady?<><div className="case-glow"/><div className="case-lid"><span>FATE</span></div><div className="case-body"><Gift size={56}/><span>DAILY</span></div></>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><DailyCase3D opening={opening} opened={opened}/></Suspense>}{opened&&<motion.div className="reward-pop" initial={{scale:.4,opacity:0,y:14}} animate={{scale:1,opacity:1,y:0}} transition={{type:"spring",stiffness:180,damping:15}}><small>YOU UNLOCKED</small><strong><SolIcon/> <AnimatedNumber value={.25}/> SOL</strong><span>Credited to wallet</span></motion.div>}</div><button className="primary case-button" disabled={opening||opened} onClick={open}>{opening?<><Sparkles size={18}/> Revealing on-chain...</>:opened?<><Check size={18}/> Come back tomorrow</>:connected?<><Gift size={18}/> Open free case</>:<><Wallet size={18}/> Connect wallet to open</>}</button><p className="case-note"><ShieldCheck size={14}/> No deposit required · Provably fair</p></section></div><section className="bottom-grid"><Fairness hash="Dc10...F44a"/><div className="card recent-results"><div className="card-title"><div><Clock3 size={18}/><strong>Your recent opens</strong></div><span>Last 3</span></div>{[["Yesterday","0.05"],["Jul 29","0.10"],["Jul 28","0.01"]].map(r=><div className="claim-row" key={r[0]}><div className="mini-case"><Gift size={16}/></div><strong>{r[0]}</strong><span>Daily case</span><b>+{r[1]} SOL</b></div>)}</div></section></motion.main>;
 }
 
 function HistoryPage() {
@@ -178,11 +218,14 @@ function ToastView({ toast, close }: { toast: Toast; close: () => void }) { retu
 
 export default function Home() {
   const [view,setView]=useState<View>("jackpot"); const [connected,setConnected]=useState(false); const [toast,setToast]=useState<Toast>(null);
+  const [sound,setSound]=useState(false); const audioContext=useRef<AudioContext|null>(null);
   useEffect(() => startLogging(), []);
+  useEffect(()=>{setSound(localStorage.getItem("fate_sound")==="on")},[]);
   useEffect(() => {
     logEvent({ eventType: "page_view", category: "navigation", gameType: view, status: "info" });
   }, [view]);
-  const notify=(t:Toast)=>{setToast(t);if(t)logEvent({eventType:"game_interaction",category:"gameplay",gameType:view,status:"success",metadata:{action:t.title}});setTimeout(()=>setToast(null),3200)};
+  const notify=(t:Toast)=>{setToast(t);if(t){playTone(t.title.includes("unlocked")||t.title.includes("connected")?"success":"tap",sound,audioContext);logEvent({eventType:"game_interaction",category:"gameplay",gameType:view,status:"success",metadata:{action:t.title}})}setTimeout(()=>setToast(null),3200)};
   const connect=()=>{const next=!connected;setConnected(next);logEvent({eventType:next?"wallet_connected":"wallet_disconnected",category:"wallet",status:"success",metadata:{provider:"demo_wallet"}});notify(next?{title:"Wallet connected",text:"7cXq...2Kp9 · 24.82 SOL available"}:{title:"Wallet disconnected",text:"Connect again whenever you’re ready."});};
-  return <div className="app-shell"><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connect={connect}/><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> Mainnet</span></div></footer><ToastView toast={toast} close={()=>setToast(null)}/></div>;
+  const toggleSound=()=>{const next=!sound;setSound(next);localStorage.setItem("fate_sound",next?"on":"off");playTone("tap",next,audioContext)};
+  return <div className="app-shell"><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connect={connect} sound={sound} toggleSound={toggleSound}/><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> Mainnet</span></div></footer><ToastView toast={toast} close={()=>setToast(null)}/></div>;
 }
