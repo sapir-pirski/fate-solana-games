@@ -8,7 +8,7 @@ FATE is a responsive Solana gaming platform for Jackpot, Coinflip, and Daily Cas
 
 - `app/`: React 19/Vinext interface, Wallet Standard connection, 3D and reduced-motion experiences, and batched offline-capable product logging.
 - `programs/fate-games/`: Anchor program with PDA state, escrow vaults, Jackpot and Coinflip settlement, Daily Case rewards, timeout recovery, pause controls, and event emission.
-- `db/`: D1/Drizzle models for append-only product logs, canonical chain events, game projections, entries, transaction intents, and indexer checkpoints.
+- `db/`: D1/Drizzle models for append-only product logs, canonical chain events, game projections, entries, transaction intents, indexer checkpoints, and AI audit records.
 - `drizzle/`: versioned database migrations.
 - `.github/workflows/ci.yml`: repeatable web and Rust checks.
 
@@ -51,6 +51,14 @@ The randomness authority is deliberately an adapter boundary, not a claim that s
 Product events are queued in IndexedDB, flushed asynchronously in bounded batches, retried with exponential backoff and jitter, deduplicated by UUID, and retained for 90 days. Logs exclude secrets, signatures, raw user agents, and IP-derived fields.
 
 Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_intents` supports pending/confirmed/failed recovery; `indexer_checkpoints` records consumer progress and health.
+
+## AI and agents
+
+The floating FATE Copilot uses the OpenAI Responses API with read-only, allow-listed tools. It can explain rules, summarize indexed wallet activity, verify stored fairness evidence, diagnose transaction signatures, check responsible-play limits, and produce unsigned devnet action drafts. Every conversation, assistant message, tool call, token count, and user rating is stored in a dedicated audit table. Private keys and signing are never available to the model.
+
+Set `OPENAI_API_KEY` in `.env.local` to enable Copilot. `OPENAI_MODEL` defaults to `gpt-5.6-sol`; provider credentials stay server-side. The operations audit endpoint requires `INDEXER_AUTH_TOKEN` and only returns a keeper plan—it does not sign. The transparent agent arena uses deterministic fixed policies, test balances, and devnet only; opt in locally with `AI_AGENT_ARENA_ENABLED=true`.
+
+Responsible-play limits are deterministic application controls, not model judgments. Self-exclusion cannot be shortened while active, and AI drafts still require simulation plus explicit approval by the connected wallet.
 
 Run `npm run db:generate` after schema changes. Apply generated migrations through the hosting environment before enabling indexer writes.
 

@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fate-operations-audit
+  namespace: fate
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: audit
+              image: curlimages/curl:8.12.1
+              args: ["-fsS", "-X", "POST", "http://fate-web/api/ai/ops", "-H", "Authorization: Bearer $(INDEXER_AUTH_TOKEN)"]
+              env:
+                - name: INDEXER_AUTH_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: fate-secrets, key: INDEXER_AUTH_TOKEN }
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+

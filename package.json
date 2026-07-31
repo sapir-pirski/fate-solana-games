@@ -25,6 +25,7 @@
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
     "next": "16.2.6",
+    "openai": "^7.3.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "three": "^0.185.1",
@@ -48,5 +49,10 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "optionalDependencies": {
+    "@emnapi/core": "1.10.0",
+    "@emnapi/runtime": "1.10.0",
+    "utf-8-validate": "5.0.10"
+  }
 }

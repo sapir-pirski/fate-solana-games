@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fate-config
+  namespace: fate
+data:
+  NEXT_PUBLIC_SOLANA_CLUSTER: devnet
+  NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
+  SOLANA_RPC_URL: https://api.devnet.solana.com
+  AI_MAX_REQUESTS_PER_WALLET_DAY: "50"
+  AI_MONTHLY_BUDGET_USD: "25"
+  AI_AGENT_ARENA_ENABLED: "false"
+  AI_AGENT_ARENA_NETWORK: devnet
+  OPENAI_MODEL: gpt-5.6-sol
+

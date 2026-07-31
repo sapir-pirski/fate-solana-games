@@ -133,3 +133,47 @@ export const indexerCheckpoints = sqliteTable("indexer_checkpoints", {
   lastError: text("last_error"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const aiConversations = sqliteTable("ai_conversations", {
+  id: text("id").primaryKey(), walletAddress: text("wallet_address"), title: text("title").notNull().default("FATE Copilot"),
+  status: text("status").notNull().default("active"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("ai_conversations_wallet_idx").on(table.walletAddress, table.updatedAt)]);
+
+export const aiMessages = sqliteTable("ai_messages", {
+  id: text("id").primaryKey(), conversationId: text("conversation_id").notNull(), role: text("role").notNull(), content: text("content").notNull(),
+  model: text("model"), responseId: text("response_id"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("ai_messages_conversation_idx").on(table.conversationId, table.createdAt)]);
+
+export const aiToolCalls = sqliteTable("ai_tool_calls", {
+  id: text("id").primaryKey(), conversationId: text("conversation_id").notNull(), callId: text("call_id").notNull(), toolName: text("tool_name").notNull(),
+  argumentsJson: text("arguments_json").notNull(), resultJson: text("result_json"), status: text("status").notNull(), durationMs: integer("duration_ms"), errorCode: text("error_code"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("ai_tool_calls_call_uidx").on(table.callId), index("ai_tool_calls_conversation_idx").on(table.conversationId, table.createdAt)]);
+
+export const aiUsage = sqliteTable("ai_usage", {
+  id: text("id").primaryKey(), conversationId: text("conversation_id"), walletHash: text("wallet_hash"), model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0), outputTokens: integer("output_tokens").notNull().default(0), reasoningTokens: integer("reasoning_tokens").notNull().default(0), cachedTokens: integer("cached_tokens").notNull().default(0), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("ai_usage_wallet_created_idx").on(table.walletHash, table.createdAt)]);
+
+export const aiFeedback = sqliteTable("ai_feedback", {
+  id: text("id").primaryKey(), messageId: text("message_id").notNull(), walletHash: text("wallet_hash"), rating: integer("rating").notNull(), reason: text("reason"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("ai_feedback_message_wallet_uidx").on(table.messageId, table.walletHash)]);
+
+export const aiEvaluations = sqliteTable("ai_evaluations", {
+  id: text("id").primaryKey(), runId: text("run_id").notNull(), evaluator: text("evaluator").notNull(), score: integer("score").notNull(), detailsJson: text("details_json").notNull().default("{}"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("ai_evaluations_run_idx").on(table.runId)]);
+
+export const agentRuns = sqliteTable("agent_runs", {
+  id: text("id").primaryKey(), agentType: text("agent_type").notNull(), walletAddress: text("wallet_address"), status: text("status").notNull(), inputJson: text("input_json").notNull(), outputJson: text("output_json"), errorCode: text("error_code"), startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text("completed_at"),
+}, table => [index("agent_runs_type_status_idx").on(table.agentType, table.status, table.startedAt)]);
+
+export const agentCheckpoints = sqliteTable("agent_checkpoints", {
+  id: text("id").primaryKey(), runId: text("run_id").notNull(), step: text("step").notNull(), stateJson: text("state_json").notNull(), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("agent_checkpoints_run_idx").on(table.runId, table.createdAt)]);
+
+export const agentAlerts = sqliteTable("agent_alerts", {
+  id: text("id").primaryKey(), alertType: text("alert_type").notNull(), severity: text("severity").notNull(), status: text("status").notNull().default("open"), subject: text("subject").notNull(), evidenceJson: text("evidence_json").notNull(), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), resolvedAt: text("resolved_at"),
+}, table => [index("agent_alerts_status_severity_idx").on(table.status, table.severity, table.createdAt)]);
+
+export const responsiblePlayLimits = sqliteTable("responsible_play_limits", {
+  walletAddress: text("wallet_address").primaryKey(), dailyLamports: integer("daily_lamports"), weeklyLamports: integer("weekly_lamports"), cooldownUntil: integer("cooldown_until"), selfExcludedUntil: integer("self_excluded_until"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
