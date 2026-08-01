@@ -41,28 +41,22 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(page.getByRole("button", { name: /View transaction/ })).toHaveCount(0);
 });
 
-test("floating controls stay compact and collision-free", async ({ page }) => {
+test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
   await page.goto("/");
   const copilot = page.locator(".copilot-launcher");
-  const compliance = page.locator(".compliance-launcher");
+  const safety = page.getByRole("button", { name: "Safety & privacy" });
   await expect(copilot).toBeVisible();
   await expect(copilot).toBeEnabled();
-  await expect(compliance).toBeVisible({ timeout: 15_000 });
   await expect(copilot).toHaveCSS("position", "fixed");
-  await expect(compliance).toHaveCSS("position", "fixed");
+  await expect(page.locator(".compliance-launcher")).toBeHidden();
   const copilotBox = await copilot.boundingBox();
-  const complianceBox = await compliance.boundingBox();
   expect(copilotBox && copilotBox.width <= 50).toBeTruthy();
   expect(copilotBox && copilotBox.x >= 0 && copilotBox.x + copilotBox.width <= 1280).toBeTruthy();
-  expect(complianceBox && complianceBox.x >= 0 && complianceBox.x + complianceBox.width <= 1280).toBeTruthy();
-  const overlap = copilotBox && complianceBox
-    ? !(copilotBox.x + copilotBox.width <= complianceBox.x || complianceBox.x + complianceBox.width <= copilotBox.x || copilotBox.y + copilotBox.height <= complianceBox.y || complianceBox.y + complianceBox.height <= copilotBox.y)
-    : true;
-  expect(overlap).toBe(false);
 
   await copilot.click();
   await expect(page.getByRole("dialog", { name: "FATE Copilot" })).toBeVisible();
   await page.getByRole("button", { name: "Close Copilot" }).click();
-  await compliance.click();
+  await safety.scrollIntoViewIfNeeded();
+  await safety.click();
   await expect(page.getByRole("dialog", { name: "Eligibility and controls" })).toBeVisible();
 });
