@@ -32,11 +32,12 @@ test("floating controls stay compact and collision-free", async ({ page }) => {
   const copilot = page.locator(".copilot-launcher");
   const compliance = page.locator(".compliance-launcher");
   await expect(copilot).toBeVisible();
+  await expect(copilot).toBeEnabled();
   await expect(compliance).toBeVisible({ timeout: 15_000 });
-  const copilotBox = await copilot.boundingBox();
-  const complianceBox = await compliance.boundingBox();
   await expect(copilot).toHaveCSS("position", "fixed");
   await expect(compliance).toHaveCSS("position", "fixed");
+  const copilotBox = await copilot.boundingBox();
+  const complianceBox = await compliance.boundingBox();
   expect(copilotBox && copilotBox.width <= 50).toBeTruthy();
   expect(copilotBox && copilotBox.x >= 0 && copilotBox.x + copilotBox.width <= 1280).toBeTruthy();
   expect(complianceBox && complianceBox.x >= 0 && complianceBox.x + complianceBox.width <= 1280).toBeTruthy();
@@ -44,4 +45,10 @@ test("floating controls stay compact and collision-free", async ({ page }) => {
     ? !(copilotBox.x + copilotBox.width <= complianceBox.x || complianceBox.x + complianceBox.width <= copilotBox.x || copilotBox.y + copilotBox.height <= complianceBox.y || complianceBox.y + complianceBox.height <= copilotBox.y)
     : true;
   expect(overlap).toBe(false);
+
+  await copilot.click();
+  await expect(page.getByRole("dialog", { name: "FATE Copilot" })).toBeVisible();
+  await page.getByRole("button", { name: "Close Copilot" }).click();
+  await compliance.click();
+  await expect(page.getByRole("dialog", { name: "Eligibility and controls" })).toBeVisible();
 });
