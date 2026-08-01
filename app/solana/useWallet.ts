@@ -39,6 +39,7 @@ export function useSolanaWallet() {
   const [recovering,setRecovering]=useState(true);
   const [operations,setOperations]=useState<Array<{operationId:string;status:TransactionState;signature?:string|null}>>([]);
   const rpcUrl = useMemo(() => RPC_URL, []);
+  const refreshWallets = useCallback(() => setAvailableWallets(getWallets().get().filter(isCompatible)), []);
 
   const refreshBalance = useCallback(async (nextAccount = account) => {
     if (!nextAccount) return setBalance(null);
@@ -60,12 +61,12 @@ export function useSolanaWallet() {
 
   useEffect(() => {
     const registry = getWallets();
-    const update = () => setAvailableWallets(registry.get().filter(isCompatible));
-    update();
+    const update = refreshWallets;
+    const initial = window.setTimeout(update, 0);
     const offRegister = registry.on("register", update);
     const offUnregister = registry.on("unregister", update);
-    return () => { offRegister(); offUnregister(); };
-  }, []);
+    return () => { window.clearTimeout(initial); offRegister(); offUnregister(); };
+  }, [refreshWallets]);
 
   const updateOperation=useCallback(async(operationId:string,status:TransactionState,extra:Record<string,unknown>={})=>{setOperations(items=>{const current=items.find(item=>item.operationId===operationId);return current?items.map(item=>item.operationId===operationId?{...item,status,...extra}:item):[...items,{operationId,status,...extra}]});try{await fetch("/api/transactions",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,status,...extra})});}catch{/* local recovery remains available */}},[]);
 
@@ -78,7 +79,10 @@ export function useSolanaWallet() {
       const wallets = getWallets().get().filter(isCompatible);
       if (!wallets.length) throw new Error("No compatible Solana wallet was found. Install Phantom, Backpack, or Solflare.");
       const selected = wallets.find(candidate => candidate.name === walletName) ?? wallets.find(candidate => /phantom/i.test(candidate.name)) ?? wallets[0];
-      const output = await selected.features[StandardConnect].connect();
+      const output = await Promise.race([
+        selected.features[StandardConnect].connect(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Wallet connection timed out. Unlock the wallet and try again.")), 30_000)),
+      ]);
       const nextAccount = output.accounts.find(item => item.chains.includes(CHAIN as `${string}:${string}`)) ?? output.accounts[0];
       if (!nextAccount) throw new Error("The wallet did not authorize a Solana account.");
       setWallet(selected);
@@ -164,6 +168,7 @@ export function useSolanaWallet() {
     recovering,
     operations,
     error,
+    refreshWallets,
     connect,
     disconnect,
     refreshBalance,

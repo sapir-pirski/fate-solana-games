@@ -16,7 +16,10 @@ import {
   History,
   LoaderCircle,
   Menu,
+  Monitor,
+  RefreshCw,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Swords,
   Trophy,
@@ -41,6 +44,12 @@ type CoinSide = "Heads" | "Tails";
 type Toast = { title: string; text: string } | null;
 type WalletOption = { name: string; icon: string };
 type WalletClient = ReturnType<typeof useSolanaWallet>;
+
+const WALLET_CATALOG = [
+  { name: "Phantom", mark: "P", color: "#ab9ff2", install: "https://phantom.com/download", mobile: (url: string) => `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(new URL(url).origin)}` },
+  { name: "Backpack", mark: "B", color: "#e33e3f", install: "https://backpack.app/download", mobile: () => "https://backpack.app/download" },
+  { name: "Solflare", mark: "S", color: "#f3a833", install: "https://solflare.com/download", mobile: (url: string) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(new URL(url).origin)}` },
+] as const;
 
 const GameCoin3D = lazy(() => import("@/components/three/GameCoin3D"));
 const DailyCase3D = lazy(() => import("@/components/three/DailyCase3D"));
@@ -219,7 +228,27 @@ function HistoryPage({wallet}:{wallet:WalletClient}) {
 
 function ToastView({ toast, close }: { toast: Toast; close: () => void }) { return <AnimatePresence>{toast&&<motion.div className="toast" role="status" aria-live="polite" aria-atomic="true" initial={{opacity:0,y:20,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:10}}><div aria-hidden="true"><Check size={18}/></div><p><strong>{toast.title}</strong><span>{toast.text}</span></p><button onClick={close} aria-label="Dismiss notification"><X size={16}/></button></motion.div>}</AnimatePresence>; }
 
-function WalletModal({ open, wallets, connecting, close, select }: { open: boolean; wallets: WalletOption[]; connecting: boolean; close: () => void; select: (name: string) => void }) {
+function WalletModal({ open, wallets, connecting, error, selected, close, select, detect, demo }: { open: boolean; wallets: WalletOption[]; connecting: boolean; error: string | null; selected: string | null; close: () => void; select: (name: string) => void; detect: () => void; demo: () => void }) {
+  const [mode, setMode] = useState<"browser" | "mobile">("browser");
+  const [mobileWallet, setMobileWallet] = useState<(typeof WALLET_CATALOG)[number]>(WALLET_CATALOG[0]);
+  const [qrData, setQrData] = useState("");
+  const [detecting, setDetecting] = useState(false);
+  const mobileLink = typeof window === "undefined" ? "" : mobileWallet.mobile(window.location.href);
+  useEffect(() => {
+    if (!open) return;
+    const refresh = () => detect();
+    const timer = window.setInterval(refresh, 1500);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [detect, open]);
+  useEffect(() => {
+    if (!open || mode !== "mobile" || !mobileLink) return;
+    let cancelled = false;
+    void import("qrcode").then(({ default: QRCode }) => QRCode.toDataURL(mobileLink, { width: 232, margin: 1, errorCorrectionLevel: "M", color: { dark: "#0b0d12", light: "#ffffff" } })).then(data => { if (!cancelled) setQrData(data); }).catch(() => { if (!cancelled) setQrData(""); });
+    return () => { cancelled = true; };
+  }, [mobileLink, mode, open]);
+  const retryDetection = () => { setDetecting(true); detect(); window.setTimeout(() => setDetecting(false), 700); };
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -237,12 +266,28 @@ function WalletModal({ open, wallets, connecting, close, select }: { open: boole
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); previous?.focus(); };
   }, [close, connecting, open]);
-  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" initial={{opacity:0,y:18,scale:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}><div className="modal-head"><div><span>FATE · DEVNET</span><h2 id="wallet-title">Connect a wallet</h2></div><button onClick={close} aria-label="Close wallet picker"><X size={18}/></button></div><p>Select an installed Solana wallet. FATE never asks for your seed phrase or private key.</p><div className="wallet-list">{wallets.length?wallets.map(option=><button key={option.name} disabled={connecting} onClick={()=>select(option.name)}><Image unoptimized width={38} height={38} src={option.icon} alt=""/><span><strong>{option.name}</strong><small>Detected · Wallet Standard</small></span>{connecting?<LoaderCircle className="spin" size={18}/>:<ChevronRight size={18}/>}</button>):<div className="wallet-empty"><Wallet size={24}/><strong>No wallet detected</strong><span>Install Phantom, Backpack, or Solflare, then refresh this page.</span></div>}</div><div className="modal-network"><i/> Solana Devnet <span>No real-value wagers</span></div></motion.section></motion.div>}</AnimatePresence>;
+  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" aria-describedby="wallet-description" initial={{opacity:0,y:18,scale:.97,rotateX:-3}} animate={{opacity:1,y:0,scale:1,rotateX:0}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}>
+    <div className="modal-head"><div><span>FATE · DEVNET</span><h2 id="wallet-title">Connect a wallet</h2></div><button onClick={close} disabled={connecting} aria-label="Close wallet picker"><X size={18}/></button></div>
+    <p id="wallet-description">Your wallet keeps the keys. FATE only requests approval for clearly described devnet actions.</p>
+    <div className="wallet-tabs" role="tablist" aria-label="Connection method"><button role="tab" aria-selected={mode==="browser"} className={mode==="browser"?"active":""} onClick={()=>setMode("browser")}><Monitor size={15}/> Browser</button><button role="tab" aria-selected={mode==="mobile"} className={mode==="mobile"?"active":""} onClick={()=>setMode("mobile")}><Smartphone size={15}/> Mobile / QR</button></div>
+    {error&&<motion.div className="wallet-error" role="alert" initial={{opacity:0,y:-4}} animate={{opacity:1,y:0}}><strong>{/reject|declin|cancel/i.test(error)?"Request rejected":/timed out/i.test(error)?"Connection timed out":"Could not connect"}</strong><span>{error} Unlock the extension, confirm it supports Solana Devnet, then retry.</span></motion.div>}
+    {mode==="browser"?<>
+      <div className="wallet-list">{wallets.length?wallets.map((option,index)=><motion.button key={option.name} disabled={connecting} onClick={()=>select(option.name)} initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} transition={{delay:index*.05}}><Image unoptimized width={38} height={38} src={option.icon} alt=""/><span><strong>{option.name}</strong><small>{selected===option.name&&connecting?"Waiting for wallet approval…":"Detected · Wallet Standard"}</small></span>{selected===option.name&&connecting?<LoaderCircle className="spin" size={18}/>:<ChevronRight size={18}/>}</motion.button>):<div className="wallet-empty"><Wallet size={24}/><strong>No compatible wallet detected</strong><span>Install a supported extension below. FATE detects Wallet Standard registration automatically—no page refresh is normally needed.</span><button onClick={retryDetection} disabled={detecting}>{detecting?<LoaderCircle className="spin" size={15}/>:<RefreshCw size={15}/>} Try detection again</button></div>}</div>
+      <div className="wallet-install"><div><strong>Install a wallet</strong><span>Chrome, Edge, Firefox, Brave, and Safari are supported when the selected wallet offers an extension.</span></div>{WALLET_CATALOG.map(item=>{const found=wallets.some(wallet=>wallet.name.toLowerCase().includes(item.name.toLowerCase()));return <a key={item.name} href={item.install} target="_blank" rel="noreferrer" aria-label={`${found?"Open":"Install"} ${item.name}`} className={found?"detected":""}><i style={{background:item.color}}>{item.mark}</i><span>{item.name}<small>{found?"Detected":"Official download"}</small></span><ExternalLink size={14}/></a>})}</div>
+    </>:<div className="wallet-mobile">
+      <div className="mobile-wallets">{WALLET_CATALOG.map(item=><button key={item.name} className={mobileWallet.name===item.name?"active":""} onClick={()=>setMobileWallet(item)}><i style={{background:item.color}}>{item.mark}</i>{item.name}</button>)}</div>
+      <div className="qr-shell">{qrData?<Image unoptimized src={qrData} width={232} height={232} alt={`QR code to open FATE in ${mobileWallet.name}`}/>:<div className="qr-loading"><LoaderCircle className="spin"/><span>Generating private QR…</span></div>}</div>
+      <p>Scan with your phone camera, or open FATE inside {mobileWallet.name}. The QR contains only this public page URL.</p><a className="mobile-open" href={mobileLink}><Smartphone size={16}/> Open in {mobileWallet.name}</a>
+    </div>}
+    <div className="wallet-help"><button onClick={demo}>Continue in demo mode</button><a href="/legal#wallet-safety" target="_blank">Wallet safety guide <ArrowUpRight size={13}/></a></div>
+    <div className="modal-network"><i/> Solana Devnet <span>No real-value wagers</span></div>
+  </motion.section></motion.div>}</AnimatePresence>;
 }
 
 export default function PlatformApp({ initialView = "jackpot" }: { initialView?: View }) {
   const [view,setView]=useState<View>(initialView); const [toast,setToast]=useState<Toast>(null);
   const [walletPicker,setWalletPicker]=useState(false);
+  const [connectingWallet,setConnectingWallet]=useState<string|null>(null);
   const hydrated=useHydrated(); const reduceMotion=useReducedMotion();
   const wallet = useSolanaWallet();
   const connected = wallet.connected;
@@ -253,9 +298,10 @@ export default function PlatformApp({ initialView = "jackpot" }: { initialView?:
   }, [view]);
   const notify=(t:Toast)=>{setToast(t);if(t){playTone(t.title.includes("unlocked")||t.title.includes("connected")?"success":"tap",sound,audioContext);logEvent({eventType:"game_interaction",category:"gameplay",gameType:view,status:"success",metadata:{action:t.title}})}setTimeout(()=>setToast(null),3200)};
   const connect=()=>{if(connected){void wallet.disconnect();logEvent({eventType:"wallet_disconnected",category:"wallet",status:"success",walletAddress:wallet.address??undefined});notify({title:"Wallet disconnected",text:"Connect again whenever you’re ready."});return;}setWalletPicker(true);};
-  const selectWallet=(name:string)=>{void wallet.connect(name).then(()=>{setWalletPicker(false);logEvent({eventType:"wallet_connected",category:"wallet",status:"success",metadata:{standard:"wallet_standard",cluster:wallet.cluster,wallet:name}});notify({title:"Wallet connected",text:"Your Solana devnet account is ready."});}).catch((cause:unknown)=>{const text=cause instanceof Error?cause.message:"Wallet connection failed.";logEvent({eventType:"wallet_connection_failed",category:"wallet",status:"failure",metadata:{reason:text.slice(0,120)}});notify({title:"Could not connect",text});});};
+  const selectWallet=(name:string)=>{setConnectingWallet(name);void wallet.connect(name).then(()=>{setWalletPicker(false);logEvent({eventType:"wallet_connected",category:"wallet",status:"success",metadata:{standard:"wallet_standard",cluster:wallet.cluster,wallet:name}});notify({title:"Wallet connected",text:"Your Solana devnet account is ready."});}).catch((cause:unknown)=>{const text=cause instanceof Error?cause.message:"Wallet connection failed.";logEvent({eventType:"wallet_connection_failed",category:"wallet",status:"failure",metadata:{reason:text.slice(0,120)}});notify({title:"Could not connect",text});}).finally(()=>setConnectingWallet(null));};
+  const continueDemo=()=>{localStorage.setItem("fate_demo_mode","on");setWalletPicker(false);notify({title:"Demo mode enabled",text:"Browse games and fairness proofs without signing transactions."});};
   const toggleSound=()=>{const next=!sound;setSound(next);localStorage.setItem("fate_sound",next?"on":"off");playTone("tap",next,audioContext)};
   const activeOperation=wallet.operations.find(operation=>!["finalized","failed","rejected","expired"].includes(operation.status));
   const accent=view==="jackpot"?"#8bff63":view==="coinflip"?"#9945ff":view==="daily"?"#55e7ff":"#42d392";
-  return <div className={`app-shell game-${view}`}>{hydrated&&!reduceMotion&&<Suspense fallback={null}><SpatialBackground3D accent={accent}/></Suspense>}<div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting||wallet.recovering} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><div className="environment-banner"><span><i/> SOLANA DEVNET</span><p>{wallet.recovering?"Recovering wallet session…":activeOperation?`Transaction recovery · ${activeOperation.status.replaceAll("_"," ")}${activeOperation.signature?` · ${activeOperation.signature.slice(0,8)}…`:""}`:connected&&wallet.authenticated?"Wallet authenticated · Compliance-gated · No mainnet wagers":"Wallet-approved transactions · No mainnet wagers"}</p></div><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot wallet={wallet} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip wallet={wallet} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase wallet={wallet} onConnect={connect} notify={notify}/>:<HistoryPage wallet={wallet}/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><a href="/verify">Fairness</a><a href="/legal#terms">Terms</a><a href="/legal#privacy">Privacy</a><a href="/legal#responsible-play">Responsible play</a><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><FateCopilot walletAddress={wallet.address}/><Suspense fallback={null}><LazyComplianceCenter authenticated={wallet.authenticated} walletAddress={wallet.address}/></Suspense><WalletModal open={walletPicker} wallets={wallet.wallets} connecting={wallet.connecting} close={()=>!wallet.connecting&&setWalletPicker(false)} select={selectWallet}/><ToastView toast={toast} close={()=>setToast(null)}/></div>;
+  return <div className={`app-shell game-${view}`}>{hydrated&&!reduceMotion&&<Suspense fallback={null}><SpatialBackground3D accent={accent}/></Suspense>}<div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting||wallet.recovering} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><div className="environment-banner"><span><i/> SOLANA DEVNET</span><p>{wallet.recovering?"Recovering wallet session…":activeOperation?`Transaction recovery · ${activeOperation.status.replaceAll("_"," ")}${activeOperation.signature?` · ${activeOperation.signature.slice(0,8)}…`:""}`:connected&&wallet.authenticated?"Wallet authenticated · Compliance-gated · No mainnet wagers":"Wallet-approved transactions · No mainnet wagers"}</p></div><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot wallet={wallet} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip wallet={wallet} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase wallet={wallet} onConnect={connect} notify={notify}/>:<HistoryPage wallet={wallet}/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><a href="/verify">Fairness</a><a href="/legal#terms">Terms</a><a href="/legal#privacy">Privacy</a><a href="/legal#responsible-play">Responsible play</a><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><FateCopilot walletAddress={wallet.address}/><Suspense fallback={null}><LazyComplianceCenter authenticated={wallet.authenticated} walletAddress={wallet.address}/></Suspense><WalletModal open={walletPicker} wallets={wallet.wallets} connecting={wallet.connecting} error={wallet.error} selected={connectingWallet} close={()=>!wallet.connecting&&setWalletPicker(false)} select={selectWallet} detect={wallet.refreshWallets} demo={continueDemo}/><ToastView toast={toast} close={()=>setToast(null)}/></div>;
 }
