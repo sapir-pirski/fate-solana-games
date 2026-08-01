@@ -4,8 +4,8 @@ import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiConversations, aiMessages, aiToolCalls, aiUsage } from "../../../../db/schema";
 import { FATE_AI_SYSTEM_PROMPT, BASE58, redactError, safeModel, validatePrompt, walletHash } from "../../../../lib/ai/policy";
 import { AI_TOOLS, executeAiTool } from "../../../../lib/ai/tools";
-import { authenticatedWallet, anonymousRequestSubject, requireSameOrigin } from "../../../../lib/auth";
-import { enforceRateLimit, rateLimitResponse } from "../../../../lib/coordination";
+import { authenticatedWallet, anonymousRequestSubject, requireSameOrigin } from "@/server/services/auth";
+import { enforceRateLimit, rateLimitResponse } from "@/server/services/coordination";
 import { increment, jsonLog, observe, withSpan } from "../../../../lib/telemetry";
 
 const MAX_MESSAGE = 2_000;

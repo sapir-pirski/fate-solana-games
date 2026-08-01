@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { responsiblePlayLimits } from "../../../../db/schema";
 import { BASE58 } from "../../../../lib/ai/policy";
-import { authenticatedWallet, requireSameOrigin } from "../../../../lib/auth";
+import { authenticatedWallet, requireSameOrigin } from "@/server/services/auth";
 
 async function handleGet(request: Request) {
   await ensureAiSchema();

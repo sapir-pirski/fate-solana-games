@@ -1,6 +1,6 @@
 import { withDatabase } from "../../../../db";
-import { authenticatedWallet, requireSameOrigin } from "../../../../lib/auth";
-import { COMPLIANCE_POLICY, complianceDecision, recordAttestation } from "../../../../lib/compliance";
+import { authenticatedWallet, requireSameOrigin } from "@/server/services/auth";
+import { COMPLIANCE_POLICY, complianceDecision, recordAttestation } from "@/server/services/compliance";
 
 export async function GET(request: Request) { return withDatabase(async () => { const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED", policy: COMPLIANCE_POLICY }, { status: 401 }); return Response.json({ decision: await complianceDecision(session.walletAddress), policy: COMPLIANCE_POLICY }, { headers: { "cache-control": "no-store" } }); }); }
 

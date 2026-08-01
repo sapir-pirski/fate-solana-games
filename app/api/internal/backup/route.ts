@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { authorizeAutomation, unauthorized } from "../../../../lib/internal-api";
+import { authorizeAutomation, unauthorized } from "@/server/services/internal-api";
 
 const TABLES = [
   "event_logs", "wallet_sessions", "transaction_operations", "background_jobs",

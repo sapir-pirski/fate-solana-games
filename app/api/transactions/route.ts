@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ensureAuthSchema, getDb, withDatabase } from "../../../db";
 import { transactionOperations } from "../../../db/schema";
-import { authenticatedWallet, nowSeconds, OPERATION_PATTERN, requireSameOrigin, TX_STATES } from "../../../lib/auth";
-import { enforceRateLimit, enqueueJob, rateLimitResponse } from "../../../lib/coordination";
-import { auditCompliance, wagerDecision } from "../../../lib/compliance";
+import { authenticatedWallet, nowSeconds, OPERATION_PATTERN, requireSameOrigin, TX_STATES } from "@/server/services/auth";
+import { enforceRateLimit, enqueueJob, rateLimitResponse } from "@/server/services/coordination";
+import { auditCompliance, wagerDecision } from "@/server/services/compliance";
 
 const GAME_TYPES=new Set(["jackpot","coinflip","daily"]);const ACTIONS=new Set(["enter_jackpot","create_coinflip","join_coinflip","open_daily"]);
 const transitions:Record<string,Set<string>>={draft:new Set(["awaiting_signature","failed"]),awaiting_signature:new Set(["submitted","rejected","failed","expired"]),submitted:new Set(["confirmed","finalized","failed","expired","unknown"]),confirmed:new Set(["finalized","failed","unknown"]),unknown:new Set(["submitted","confirmed","finalized","failed","expired"])};

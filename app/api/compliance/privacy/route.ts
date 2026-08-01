@@ -1,8 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { ensureComplianceSchema, getDb, withDatabase } from "../../../../db";
 import { privacyRequests } from "../../../../db/schema";
-import { authenticatedWallet, requireSameOrigin } from "../../../../lib/auth";
-import { auditCompliance } from "../../../../lib/compliance";
+import { authenticatedWallet, requireSameOrigin } from "@/server/services/auth";
+import { auditCompliance } from "@/server/services/compliance";
 
 const types = new Set(["access", "export", "erasure", "restriction", "rectification", "objection"]);
 export async function GET(request: Request) { return withDatabase(async () => { const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 }); await ensureComplianceSchema(); const requests = await getDb().select().from(privacyRequests).where(eq(privacyRequests.walletAddress, session.walletAddress)).orderBy(desc(privacyRequests.requestedAt)).limit(50); return Response.json({ requests }, { headers: { "cache-control": "no-store" } }); }); }

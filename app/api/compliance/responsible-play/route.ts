@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { responsiblePlayLimits } from "../../../../db/schema";
-import { authenticatedWallet, nowSeconds, requireSameOrigin } from "../../../../lib/auth";
-import { auditCompliance } from "../../../../lib/compliance";
+import { authenticatedWallet, nowSeconds, requireSameOrigin } from "@/server/services/auth";
+import { auditCompliance } from "@/server/services/compliance";
 
 export async function POST(request: Request) { return withDatabase(async () => {
   if (!requireSameOrigin(request)) return Response.json({ code: "INVALID_ORIGIN" }, { status: 403 }); const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 });

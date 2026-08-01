@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiFeedback, aiMessages } from "../../../../db/schema";
 import { BASE58, walletHash } from "../../../../lib/ai/policy";
-import { authenticatedWallet, requireSameOrigin } from "../../../../lib/auth";
+import { authenticatedWallet, requireSameOrigin } from "@/server/services/auth";
 
 async function handlePost(request: Request) {
   if (!requireSameOrigin(request)) return Response.json({ code: "INVALID_ORIGIN" }, { status: 403 });

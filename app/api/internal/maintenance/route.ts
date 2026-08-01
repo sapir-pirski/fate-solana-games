@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { authorizeAutomation, unauthorized } from "../../../../lib/internal-api";
+import { authorizeAutomation, unauthorized } from "@/server/services/internal-api";
 import { ensureAuthSchema, ensureEventLogSchema } from "../../../../db";
 
 export async function POST(request: Request) {
