@@ -3,8 +3,9 @@ set -euo pipefail
 
 PROJECT_ID="${NEBIUS_PROJECT_ID:-project-e00sv4bvpr00wr5e5kr9xr}"
 REGISTRY_ID="${NEBIUS_REGISTRY_ID:?Set NEBIUS_REGISTRY_ID}"
+REGISTRY_PATH="${REGISTRY_ID#registry-}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
-IMAGE="cr.eu-north1.nebius.cloud/${REGISTRY_ID}/fate-platform:${IMAGE_TAG}"
+IMAGE="cr.eu-north1.nebius.cloud/${REGISTRY_PATH}/fate-platform:${IMAGE_TAG}"
 SECRET_FILE="deploy/nebius/secret.yaml"
 
 test -f "$SECRET_FILE" || { echo "Missing $SECRET_FILE; copy secret.example.yaml and replace placeholders." >&2; exit 1; }

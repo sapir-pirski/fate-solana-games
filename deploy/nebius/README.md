@@ -17,6 +17,9 @@ shared H100 GPU workers. FATE workloads select and tolerate only the dedicated
 Oref workload and must not be reused; FATE needs its own cluster after the
 D1/SQLite persistence adapter is migrated to PostgreSQL.
 
+Nebius image URLs use the registry resource ID without its `registry-` prefix,
+for example `cr.eu-north1.nebius.cloud/e00zey749styjjkd0g/fate-platform:<tag>`.
+
 This package deploys the current devnet engineering build to Managed Kubernetes with a private secret, persistent application state, health checks, resource limits, a public load balancer, and a non-signing operations audit job. The application remains single-replica while its D1-compatible local state is in use. Move persistence to Managed PostgreSQL before increasing replicas.
 
 Required operator inputs are deliberately not committed: `OPENAI_API_KEY`, a random `INDEXER_AUTH_TOKEN`, and the audited devnet program ID. Copy `secret.example.yaml` to an ignored `secret.yaml`, replace every placeholder, and run `./scripts/deploy-nebius.sh` after the Nebius resources and kubeconfig exist.
