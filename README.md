@@ -76,6 +76,11 @@ Run `npm run db:generate` after schema changes. Apply generated migrations throu
 6. Move authorities to multisig, configure production RPC/monitoring, and only then consider mainnet.
 
 See [SECURITY.md](SECURITY.md) for the launch security requirements.
+
+## License
+
+This project is available under the [MIT License](LICENSE).
+
 # Hosting and local recovery
 
 The public VM-free deployment is hosted on Sites at
