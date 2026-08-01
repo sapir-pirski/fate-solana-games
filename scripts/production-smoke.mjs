@@ -9,5 +9,5 @@ async function expectJson(path, predicate) {
 await expectJson("/api/health", (body) => body?.status === "ok" && body?.database?.status === "ok");
 await expectJson("/api/ai/status", (body) => typeof body?.enabled === "boolean");
 const page = await fetch(`${baseUrl}/legal`);
-if (!page.ok || !(await page.text()).includes("Responsible Play")) throw new Error("Legal and responsible-play page is unavailable.");
+if (!page.ok || !/Responsible play/i.test(await page.text())) throw new Error("Legal and responsible-play page is unavailable.");
 console.log(JSON.stringify({ status: "ok", baseUrl, checkedAt: new Date().toISOString() }));
