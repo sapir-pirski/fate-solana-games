@@ -233,14 +233,20 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
   const [mobileWallet, setMobileWallet] = useState<(typeof WALLET_CATALOG)[number]>(WALLET_CATALOG[0]);
   const [qrData, setQrData] = useState("");
   const [detecting, setDetecting] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(close);
+  const connectingRef = useRef(connecting);
+  useEffect(() => { closeRef.current = close; }, [close]);
+  useEffect(() => { connectingRef.current = connecting; }, [connecting]);
   const mobileLink = typeof window === "undefined" ? "" : mobileWallet.mobile(window.location.href);
   useEffect(() => {
     if (!open) return;
     const refresh = () => detect();
-    const timer = window.setInterval(refresh, 1500);
+    const initial = window.requestAnimationFrame(refresh);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") refresh(); };
     window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { window.cancelAnimationFrame(initial); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, [detect, open]);
   useEffect(() => {
     if (!open || mode !== "mobile" || !mobileLink) return;
@@ -252,24 +258,42 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = document.querySelector<HTMLElement>(".wallet-modal");
-    dialog?.querySelector<HTMLElement>("button:not([disabled])")?.focus();
+    const dialog = dialogRef.current;
+    const scrollY = window.scrollY;
+    const previousBodyStyles = { overflow: document.body.style.overflow, overscrollBehavior: document.body.style.overscrollBehavior };
+    const previousRootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => dialog?.focus({ preventScroll: true }));
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !connecting) close();
+      if (event.key === "Escape" && !connectingRef.current) closeRef.current();
       if (event.key !== "Tab" || !dialog) return;
       const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),[tabindex]:not([tabindex="-1"])')];
       if (!focusable.length) return;
       const first = focusable[0], last = focusable.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus({ preventScroll: true }); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({ preventScroll: true }); }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => { document.removeEventListener("keydown", onKeyDown); previous?.focus(); };
-  }, [close, connecting, open]);
-  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" aria-describedby="wallet-description" initial={{opacity:0,y:18,scale:.97,rotateX:-3}} animate={{opacity:1,y:0,scale:1,rotateX:0}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}>
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", onKeyDown);
+      Object.assign(document.body.style, previousBodyStyles);
+      document.documentElement.style.overflow = previousRootOverflow;
+      window.scrollTo(0, scrollY);
+      previous?.focus({ preventScroll: true });
+    };
+  }, [open]);
+  const switchMode = (next: "browser" | "mobile") => {
+    const scrollTop = dialogRef.current?.scrollTop ?? 0;
+    setMode(next);
+    window.requestAnimationFrame(() => { if (dialogRef.current) dialogRef.current.scrollTop = scrollTop; });
+  };
+  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section ref={dialogRef} tabIndex={-1} className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" aria-describedby="wallet-description" initial={{opacity:0,y:18,scale:.97,rotateX:-3}} animate={{opacity:1,y:0,scale:1,rotateX:0}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}>
     <div className="modal-head"><div><span>FATE · DEVNET</span><h2 id="wallet-title">Connect a wallet</h2></div><button onClick={close} disabled={connecting} aria-label="Close wallet picker"><X size={18}/></button></div>
     <p id="wallet-description">Your wallet keeps the keys. FATE only requests approval for clearly described devnet actions.</p>
-    <div className="wallet-tabs" role="tablist" aria-label="Connection method"><button role="tab" aria-selected={mode==="browser"} className={mode==="browser"?"active":""} onClick={()=>setMode("browser")}><Monitor size={15}/> Browser</button><button role="tab" aria-selected={mode==="mobile"} className={mode==="mobile"?"active":""} onClick={()=>setMode("mobile")}><Smartphone size={15}/> Mobile / QR</button></div>
+    <div className="wallet-tabs" role="tablist" aria-label="Connection method"><button role="tab" aria-selected={mode==="browser"} className={mode==="browser"?"active":""} onClick={()=>switchMode("browser")}><Monitor size={15}/> Browser</button><button role="tab" aria-selected={mode==="mobile"} className={mode==="mobile"?"active":""} onClick={()=>switchMode("mobile")}><Smartphone size={15}/> Mobile / QR</button></div>
     {error&&<motion.div className="wallet-error" role="alert" initial={{opacity:0,y:-4}} animate={{opacity:1,y:0}}><strong>{/reject|declin|cancel/i.test(error)?"Request rejected":/timed out/i.test(error)?"Connection timed out":"Could not connect"}</strong><span>{error} Unlock the extension, confirm it supports Solana Devnet, then retry.</span></motion.div>}
     {mode==="browser"?<>
       <div className="wallet-list">{wallets.length?wallets.map((option,index)=><motion.button key={option.name} disabled={connecting} onClick={()=>select(option.name)} initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} transition={{delay:index*.05}}><Image unoptimized width={38} height={38} src={option.icon} alt=""/><span><strong>{option.name}</strong><small>{selected===option.name&&connecting?"Waiting for wallet approval…":"Detected · Wallet Standard"}</small></span>{selected===option.name&&connecting?<LoaderCircle className="spin" size={18}/>:<ChevronRight size={18}/>}</motion.button>):<div className="wallet-empty"><Wallet size={24}/><strong>No compatible wallet detected</strong><span>Install a supported extension below. FATE detects Wallet Standard registration automatically—no page refresh is normally needed.</span><button onClick={retryDetection} disabled={detecting}>{detecting?<LoaderCircle className="spin" size={15}/>:<RefreshCw size={15}/>} Try detection again</button></div>}</div>

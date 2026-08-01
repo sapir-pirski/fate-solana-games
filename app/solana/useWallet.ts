@@ -39,7 +39,16 @@ export function useSolanaWallet() {
   const [recovering,setRecovering]=useState(true);
   const [operations,setOperations]=useState<Array<{operationId:string;status:TransactionState;signature?:string|null}>>([]);
   const rpcUrl = useMemo(() => RPC_URL, []);
-  const refreshWallets = useCallback(() => setAvailableWallets(getWallets().get().filter(isCompatible)), []);
+  const refreshWallets = useCallback(() => {
+    const next = getWallets().get().filter(isCompatible);
+    setAvailableWallets(current => {
+      const unchanged = current.length === next.length && current.every((item, index) => {
+        const candidate = next[index];
+        return item === candidate || (item.name === candidate.name && item.icon === candidate.icon);
+      });
+      return unchanged ? current : next;
+    });
+  }, []);
 
   const refreshBalance = useCallback(async (nextAccount = account) => {
     if (!nextAccount) return setBalance(null);
