@@ -62,7 +62,8 @@ test("copilot floats without collision and safety lives in the footer", async ({
 });
 
 test("copilot dismisses outside, wraps prompts, and offers retry on provider failure", async ({ page }) => {
-  await page.route("**/api/ai/chat", route => route.fulfill({ status: 503, contentType: "application/json", body: '{"code":"AI_UNAVAILABLE","requestId":"test-request"}' }));
+  let attempts = 0;
+  await page.route("**/api/ai/chat", route => { attempts += 1; return attempts === 1 ? route.fulfill({ status: 503, contentType: "application/json", body: '{"code":"AI_UNAVAILABLE","requestId":"test-request"}' }) : route.fulfill({ status: 200, contentType: "text/event-stream", body: 'event: meta\ndata: {"conversationId":"00000000-0000-4000-8000-000000000001"}\n\nevent: delta\ndata: {"delta":"Recovered in a clean conversation."}\n\nevent: done\ndata: {}\n\n' }); });
   await page.goto("/");
   const launcher = page.locator(".copilot-launcher");
   await launcher.click();
@@ -73,11 +74,20 @@ test("copilot dismisses outside, wraps prompts, and offers retry on provider fai
   for (const prompt of await prompts.all()) await expect(prompt).toBeInViewport();
   await prompts.first().click();
   await expect(dialog.getByText("Copilot is temporarily unavailable. Please retry.")).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Retry" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Retry" }).click();
+  await expect(dialog.getByText("Recovered in a clean conversation.")).toBeVisible();
+  await expect(dialog.getByText("Copilot is temporarily unavailable. Please retry.")).toHaveCount(0);
+  await expect(dialog.getByText("Explain Jackpot fairness", { exact: true })).toHaveCount(2);
   await page.getByRole("button", { name: "Dismiss Copilot" }).click({ position: { x: 4, y: 4 } });
   await expect(dialog).toBeHidden();
   await expect(launcher).toBeFocused();
   await launcher.click();
+  await expect(dialog.getByText("Recovered in a clean conversation.")).toHaveCount(0);
+  await expect(dialog.getByText("Explain Jackpot fairness", { exact: true })).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+  await page.evaluate(() => { sessionStorage.setItem("fate.ai.messages", '[{"id":"stale","role":"assistant","content":"stale failure"}]'); sessionStorage.setItem("fate.ai.conversation", "stale"); });
+  await page.reload();
+  await launcher.click();
+  await expect(page.getByText("stale failure")).toHaveCount(0);
 });
