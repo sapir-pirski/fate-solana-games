@@ -12,7 +12,7 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:unit": "tsx --test tests/unit/*.test.ts",
-    "test:integration": "tsx --test tests/integration/*.integration.ts tests/indexer-store.integration.ts",
+    "test:integration": "node --test tests/integration/*.integration.mjs",
     "test:browser": "playwright test tests/browser/platform.spec.ts",
     "test:accessibility": "playwright test tests/browser/accessibility.spec.ts",
     "test:contract": "playwright test tests/browser/contracts.spec.ts --project=chromium",
@@ -28,12 +28,7 @@
     "security:authorities": "node scripts/verify-authority-separation.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "indexer": "tsx indexer/cli.ts run",
-    "indexer:once": "tsx indexer/cli.ts once",
-    "indexer:rebuild": "tsx indexer/cli.ts rebuild",
-    "indexer:retry": "tsx indexer/cli.ts retry-failures",
-    "worker:coordination": "tsx worker/coordination-worker.ts",
-    "test:indexer:integration": "tsx --test tests/indexer-store.integration.ts"
+    "test:indexer": "node --test tests/indexer.test.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",
@@ -48,7 +43,6 @@
     "lucide-react": "^1.28.0",
     "next": "^16.2.12",
     "openai": "^7.3.0",
-    "postgres": "3.4.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.185.1",

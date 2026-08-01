@@ -97,11 +97,11 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Indexer lag and RPC latency",
+      "title": "D1 operation and Solana RPC latency",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "fate_indexer_finalized_lag", "legendFormat": "finalized slot lag", "refId": "A" },
+        { "expr": "fate_database_operation_duration_ms_sum{backend=\"d1\"} / clamp_min(fate_database_operation_duration_ms_count{backend=\"d1\"}, 1)", "legendFormat": "D1 average", "refId": "A" },
         { "expr": "fate_solana_rpc_latency_ms", "legendFormat": "RPC latency", "refId": "B" }
       ],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byName", "options": "RPC latency" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
@@ -110,13 +110,13 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "Database and queue health",
+      "title": "D1 and transaction recovery health",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "up{job=\"postgres\"}", "legendFormat": "PostgreSQL", "refId": "A" },
-        { "expr": "fate:queue_pending:count", "legendFormat": "Pending jobs", "refId": "B" },
-        { "expr": "fate:indexer_lag:max", "legendFormat": "Indexer lag", "refId": "C" }
+        { "expr": "fate_database_metrics_available", "legendFormat": "D1 available", "refId": "A" },
+        { "expr": "fate:transaction_stuck:count", "legendFormat": "Pending confirmations", "refId": "B" },
+        { "expr": "fate_active_sessions", "legendFormat": "Active sessions", "refId": "C" }
       ],
       "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
@@ -148,9 +148,9 @@
   "tags": ["fate", "local", "operations", "logs"],
   "templating": {
     "list": [
-      { "name": "service", "label": "Service", "type": "custom", "query": "All : .*, FATE app : fate-app|app, Indexer : fate-indexer|indexer, Worker : fate-coordination|coordination-worker, PostgreSQL : postgres|postgres-exporter", "current": { "selected": true, "text": "All", "value": ".*" }, "hide": 0, "includeAll": false, "multi": false, "options": [] },
+      { "name": "service", "label": "Service", "type": "custom", "query": "All : .*, FATE app : fate-app|app", "current": { "selected": true, "text": "All", "value": ".*" }, "hide": 0, "includeAll": false, "multi": false, "options": [] },
       { "name": "level", "label": "Log level", "type": "custom", "query": "error,warn,info,debug", "current": { "selected": true, "text": ["error", "warn", "info"], "value": ["error", "warn", "info"] }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
-      { "name": "component", "label": "Component", "type": "custom", "query": "api,indexer,coordination,wallet,ai,unknown", "current": { "selected": true, "text": "All", "value": "$__all" }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
+      { "name": "component", "label": "Component", "type": "custom", "query": "api,database,wallet,ai,unknown", "current": { "selected": true, "text": "All", "value": "$__all" }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
       { "name": "game", "label": "Game", "type": "custom", "query": "jackpot,coinflip,daily_case,history,unknown", "current": { "selected": true, "text": "All", "value": "$__all" }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
       { "name": "search", "label": "Message contains", "type": "textbox", "query": "", "current": { "selected": true, "text": "", "value": "" }, "hide": 0 },
       { "name": "trace", "label": "Trace ID", "type": "textbox", "query": ".*", "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0 }

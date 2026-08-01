@@ -4,7 +4,7 @@ Status: internal engineering threat model, 2026-08-01. It is not an independent 
 
 ## Scope and security objectives
 
-The scope is the Solana program, PDA vaults, Switchboard randomness accounts, wallet-authenticated web API, D1/PostgreSQL data, Sites runtime, OpenAI integration, CI/CD, indexer and operator interfaces. The primary objectives are:
+The scope is the Solana program, PDA vaults, Switchboard randomness accounts, wallet-authenticated web API, D1 data, Sites runtime, OpenAI integration, CI/CD, chain-read and operator interfaces. The primary objectives are:
 
 1. no unauthorized movement of escrow or treasury lamports;
 2. no outcome chosen or replayed by a player, operator, API or AI system;

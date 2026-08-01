@@ -1,91 +1,43 @@
 import { env } from "cloudflare:workers";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
-import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { POSTGRES_SCHEMA_STATEMENTS } from "./postgres-schema";
 import * as schema from "./schema";
 import { observe, withSpan } from "../lib/telemetry";
 
-type DatabaseBackend = "d1" | "postgres";
-type PostgresClient = ReturnType<typeof postgres>;
+export function getDatabaseBackend() { return "d1" as const; }
 
-type PostgresContext = { client: PostgresClient; db: ReturnType<typeof drizzlePostgres> };
-const postgresContext = new AsyncLocalStorage<PostgresContext>();
-
-function databaseUrl() {
-  return process.env.DATABASE_URL?.trim();
-}
-
-function createPostgresClient() {
-  const url = databaseUrl();
-  if (!url) throw new Error("DATABASE_URL is not configured.");
-  return postgres(url, {
-      max: Number(process.env.DATABASE_POOL_SIZE ?? 10),
-      idle_timeout: 20,
-      connect_timeout: 10,
-      prepare: false,
-      ssl: process.env.DATABASE_SSL === "disable" ? false : "require",
-      onnotice: () => undefined,
-  });
-}
-
-export function getDatabaseBackend(): DatabaseBackend {
-  return databaseUrl() ? "postgres" : "d1";
-}
-
-/** The routes intentionally use the common Drizzle query surface. Both
- * backends emit the same table and column names; PostgreSQL uses BIGINT for
- * on-chain numeric values while D1 stores them as SQLite integers. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getDb(): any {
-  if (getDatabaseBackend() === "postgres") {
-    const context = postgresContext.getStore();
-    if (!context) throw new Error("PostgreSQL access must run inside withDatabase().");
-    return context.db;
-  }
+export function getDb() {
   if (!env.DB) {
-    throw new Error(
-      "No database is configured. Set DATABASE_URL for PostgreSQL or provide the Cloudflare D1 `DB` binding."
-    );
+    throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   }
   return drizzleD1(env.DB, { schema });
 }
 
 export async function withDatabase<T>(operation: () => Promise<T>): Promise<T> {
-  const started=Date.now();
-  if (getDatabaseBackend() === "d1") {try{return await withSpan("database.operation",{component:"database",backend:"d1"},operation);}finally{observe("fate_database_operation_duration_ms",Date.now()-started,{backend:"d1"});}}
-  const existing = postgresContext.getStore();
-  if (existing) return operation();
-  const client = createPostgresClient();
-  const context = { client, db: drizzlePostgres(client, { schema }) };
-  try {
-    return await withSpan("database.operation",{component:"database",backend:"postgres"},()=>postgresContext.run(context, operation));
-  } finally {
-    observe("fate_database_operation_duration_ms",Date.now()-started,{backend:"postgres"});
-    await client.end({ timeout: 5 });
-  }
-}
-
-let postgresSchemaReady: Promise<void> | null = null;
-async function ensurePostgresSchema() {
-  if (!postgresSchemaReady) {
-    postgresSchemaReady = (async () => {
-      const context = postgresContext.getStore();
-      if (!context) throw new Error("PostgreSQL schema setup must run inside withDatabase().");
-      const client = context.client;
-      for (const statement of POSTGRES_SCHEMA_STATEMENTS) await client.unsafe(statement);
-    })().catch((error: unknown) => {
-      postgresSchemaReady = null;
-      throw error;
-    });
-  }
-  await postgresSchemaReady;
+  const started = Date.now();
+  try { return await withSpan("database.operation", { component: "database", backend: "d1" }, operation); }
+  finally { observe("fate_database_operation_duration_ms", Date.now() - started, { backend: "d1" }); }
 }
 
 let eventLogSchemaReady: Promise<unknown> | null = null;
+let gameSchemaReady: Promise<unknown> | null = null;
+export async function ensureGameSchema() {
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  if (!gameSchemaReady) gameSchemaReady = env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS chain_events (id TEXT PRIMARY KEY NOT NULL, signature TEXT NOT NULL, instruction_index INTEGER NOT NULL, event_index INTEGER NOT NULL, slot INTEGER NOT NULL, block_time INTEGER, program_id TEXT NOT NULL, event_name TEXT NOT NULL, payload_json TEXT NOT NULL, commitment TEXT NOT NULL DEFAULT 'confirmed', ingested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS chain_events_position_uidx ON chain_events (signature,instruction_index,event_index)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS chain_events_slot_idx ON chain_events (slot)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS games (address TEXT PRIMARY KEY NOT NULL, game_type TEXT NOT NULL, numeric_id TEXT NOT NULL, state TEXT NOT NULL, creator TEXT, winner TEXT, wager_lamports INTEGER NOT NULL DEFAULT 0, pot_lamports INTEGER NOT NULL DEFAULT 0, payout_lamports INTEGER NOT NULL DEFAULT 0, fee_lamports INTEGER NOT NULL DEFAULT 0, randomness_hex TEXT, opened_at INTEGER, expires_at INTEGER, settled_at INTEGER, last_signature TEXT NOT NULL, last_slot INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS games_type_numeric_id_uidx ON games (game_type,numeric_id)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS games_type_state_idx ON games (game_type,state)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS game_entries (id TEXT PRIMARY KEY NOT NULL, game_address TEXT NOT NULL, wallet_address TEXT NOT NULL, role TEXT NOT NULL, amount_lamports INTEGER NOT NULL, signature TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS game_entries_signature_wallet_uidx ON game_entries (signature,wallet_address,role)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_game_idx ON game_entries (game_address,slot)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS indexer_checkpoints (consumer TEXT PRIMARY KEY NOT NULL, last_signature TEXT, last_slot INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'healthy', last_error TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+  ]).catch((error: unknown) => { gameSchemaReady = null; throw error; });
+  await gameSchemaReady;
+}
+
 export async function ensureEventLogSchema() {
-  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   if (!eventLogSchemaReady) {
     const d1 = env.DB;
@@ -114,15 +66,6 @@ export async function pruneEventLogs(retentionDays: number) {
   if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) {
     throw new Error("Invalid event log retention period.");
   }
-  if (getDatabaseBackend() === "postgres") {
-    const context = postgresContext.getStore();
-    if (!context) throw new Error("PostgreSQL retention must run inside withDatabase().");
-    await context.client.unsafe(
-      "DELETE FROM event_logs WHERE created_at::timestamptz < NOW() - ($1 * INTERVAL '1 day')",
-      [retentionDays],
-    );
-    return;
-  }
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   await env.DB.prepare("DELETE FROM event_logs WHERE created_at < datetime('now', ?)")
     .bind(`-${retentionDays} days`)
@@ -131,7 +74,6 @@ export async function pruneEventLogs(retentionDays: number) {
 
 let aiSchemaReady: Promise<unknown> | null = null;
 export async function ensureAiSchema() {
-  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   if (!aiSchemaReady) aiSchemaReady = env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_conversations (id TEXT PRIMARY KEY NOT NULL, wallet_address TEXT, title TEXT NOT NULL DEFAULT 'FATE Copilot', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
@@ -153,7 +95,6 @@ export async function ensureAiSchema() {
 
 let authSchemaReady: Promise<unknown> | null = null;
 export async function ensureAuthSchema() {
-  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   if (!authSchemaReady) authSchemaReady = env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_auth_challenges (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, nonce_hash TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
@@ -175,7 +116,6 @@ export async function ensureAuthSchema() {
 
 let complianceSchemaReady: Promise<unknown> | null = null;
 export async function ensureComplianceSchema() {
-  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   if (!complianceSchemaReady) complianceSchemaReady = env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS compliance_profiles (wallet_address TEXT PRIMARY KEY, country_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', jurisdiction_status TEXT NOT NULL DEFAULT 'unreviewed', sanctions_status TEXT NOT NULL DEFAULT 'not_screened', age_attested_at INTEGER, terms_version TEXT, privacy_version TEXT, risk_version TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
@@ -189,14 +129,6 @@ export async function ensureComplianceSchema() {
 }
 
 export async function checkDatabaseHealth() {
-  if (getDatabaseBackend() === "postgres") {
-    await withDatabase(async () => {
-      const context = postgresContext.getStore();
-      if (!context) throw new Error("PostgreSQL context is unavailable.");
-      await context.client.unsafe("SELECT 1");
-    });
-    return { backend: "postgres", status: "ok" } as const;
-  }
   if (!env.DB) return { backend: "d1", status: "unavailable" } as const;
   await env.DB.prepare("SELECT 1").first();
   return { backend: "d1", status: "ok" } as const;

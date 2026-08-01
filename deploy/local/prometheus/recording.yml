@@ -4,9 +4,5 @@ groups:
     rules:
       - record: fate:transaction_stuck:count
         expr: sum(fate_transaction_operations{status=~"submitted|confirmed|unknown"})
-      - record: fate:queue_pending:count
-        expr: sum(fate_queue_jobs{status=~"pending|retry|running"})
-      - record: fate:indexer_lag:max
-        expr: max(fate_indexer_finalized_lag)
       - record: fate:rpc_available:min
         expr: min(fate_solana_rpc_providers_available)

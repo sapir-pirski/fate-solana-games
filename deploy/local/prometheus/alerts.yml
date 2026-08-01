@@ -9,46 +9,46 @@ groups:
           summary: FATE local application is unavailable
           impact: Wallet and game API requests are unavailable.
           runbook_url: https://github.com/fate/runbooks#application-down
-      - alert: FateDatabaseExporterDown
-        expr: up{job="postgres"} == 0
-        for: 2m
-        labels: { severity: warning }
-        annotations:
-          summary: FATE local PostgreSQL exporter is unavailable
-          impact: Database health and capacity are unknown.
-          runbook_url: https://github.com/fate/runbooks#postgres
-      - alert: FateIndexerDown
-        expr: up{job="fate-indexer"} == 0
+      - alert: FateD1MetricsUnavailable
+        expr: fate_database_metrics_available == 0
         for: 2m
         labels: { severity: critical }
         annotations:
-          summary: FATE Solana indexer is unavailable
-          impact: Finalized game history will stop advancing.
-          runbook_url: https://github.com/fate/runbooks#indexer-down
-      - alert: FateIndexerFinalizedLag
-        expr: fate_indexer_finalized_lag > 500
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: FATE Solana indexer is more than 500 finalized slots behind
-          impact: Users may see stale finalized game state.
-          runbook_url: https://github.com/fate/runbooks#indexer-lag
-      - alert: FateIndexerDeadLetters
-        expr: fate_indexer_dead_letters > 0
+          summary: FATE D1 application database is unavailable
+          impact: Durable wallet, game, and transaction state cannot be read.
+          runbook_url: https://github.com/fate/runbooks#d1-unavailable
+      - alert: FateD1LatencyHigh
+        expr: fate_database_operation_duration_ms_sum{backend="d1"} / clamp_min(fate_database_operation_duration_ms_count{backend="d1"}, 1) > 1000
         for: 10m
         labels: { severity: warning }
         annotations:
-          summary: FATE Solana indexer has unresolved dead-letter records
-          impact: One or more chain transactions could not be indexed.
-          runbook_url: https://github.com/fate/runbooks#indexer-dead-letters
-      - alert: FateCoordinationWorkerDown
-        expr: up{job="fate-coordination"} == 0
-        for: 2m
-        labels: { severity: critical }
+          summary: FATE D1 operation latency is elevated
+          impact: Wallet sessions and game API requests may respond slowly.
+          runbook_url: https://github.com/fate/runbooks#d1-latency
+      - alert: FateApplicationErrorRateHigh
+        expr: sum(rate(fate_errors_total[5m])) > 0.1
+        for: 10m
+        labels: { severity: warning }
         annotations:
-          summary: Transaction recovery worker is unavailable
-          impact: Submitted transaction confirmation recovery is paused.
-          runbook_url: https://github.com/fate/runbooks#coordination-worker
+          summary: FATE application error rate is elevated
+          impact: One or more user workflows may be failing.
+          runbook_url: https://github.com/fate/runbooks#application-errors
+      - alert: FateAiProviderLatencyHigh
+        expr: fate_ai_provider_duration_ms_sum / clamp_min(fate_ai_provider_duration_ms_count, 1) > 15000
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: FATE Copilot provider latency is elevated
+          impact: AI assistance may time out while gameplay remains available.
+          runbook_url: https://github.com/fate/runbooks#ai-provider-latency
+      - alert: FateRateLimitRejectionsHigh
+        expr: sum(rate(fate_rate_limit_decisions_total{decision="rejected"}[5m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: FATE is rejecting an elevated volume of requests
+          impact: Legitimate wallets may experience temporary throttling.
+          runbook_url: https://github.com/fate/runbooks#rate-limits
       - alert: FateTransactionRecoveryBacklog
         expr: fate:transaction_stuck:count > 20
         for: 10m
@@ -57,22 +57,6 @@ groups:
           summary: Transaction recovery backlog is elevated
           impact: Wallet transaction finality may be delayed.
           runbook_url: https://github.com/fate/runbooks#transaction-recovery
-      - alert: FateQueueOldestJob
-        expr: max(fate_queue_oldest_age_seconds{status=~"pending|retry|running"}) > 300
-        for: 5m
-        labels: { severity: warning }
-        annotations:
-          summary: A background job has been waiting over five minutes
-          impact: Confirmation or cleanup work is delayed.
-          runbook_url: https://github.com/fate/runbooks#queue-backlog
-      - alert: FateQueueDeadLetters
-        expr: sum(fate_queue_jobs{status="dead"}) > 0
-        for: 5m
-        labels: { severity: critical }
-        annotations:
-          summary: Background jobs entered the dead-letter state
-          impact: Automated recovery exhausted all retry attempts.
-          runbook_url: https://github.com/fate/runbooks#queue-dead-letter
       - alert: FateSolanaRpcUnavailable
         expr: fate_solana_rpc_providers_available < 1
         for: 2m
@@ -89,14 +73,6 @@ groups:
           summary: Solana RPC latency is elevated
           impact: Game state and confirmations may be delayed.
           runbook_url: https://github.com/fate/runbooks#solana-rpc-latency
-      - alert: FatePostgresConnectionsHigh
-        expr: sum(pg_stat_activity_count) / clamp_min(sum(pg_settings_max_connections), 1) > 0.8
-        for: 10m
-        labels: { severity: warning }
-        annotations:
-          summary: PostgreSQL connection utilization is high
-          impact: API and worker queries may begin failing.
-          runbook_url: https://github.com/fate/runbooks#postgres-connections
       - alert: FateTelemetryMissing
         expr: absent(fate_build_info)
         for: 5m

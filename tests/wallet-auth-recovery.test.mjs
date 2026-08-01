@@ -5,13 +5,13 @@ import { readFileSync } from "node:fs";
 const auth=readFileSync(new URL("../lib/auth.ts",import.meta.url),"utf8");
 const wallet=readFileSync(new URL("../app/solana/useWallet.ts",import.meta.url),"utf8");
 const transactions=readFileSync(new URL("../app/api/transactions/route.ts",import.meta.url),"utf8");
-const schema=readFileSync(new URL("../db/postgres-schema.ts",import.meta.url),"utf8");
+const schema=readFileSync(new URL("../db/schema.ts",import.meta.url),"utf8");
 
 test("wallet sessions use signed challenges and hashed HttpOnly cookies",()=>{
   assert.match(auth,/crypto\.subtle\.verify\("Ed25519"/);
   assert.match(auth,/HttpOnly; SameSite=Strict/);
-  assert.match(schema,/wallet_auth_challenges/);
-  assert.match(schema,/token_hash TEXT NOT NULL UNIQUE/);
+  assert.match(schema,/walletAuthChallenges/);
+  assert.match(schema,/uniqueIndex\("wallet_sessions_token_uidx"\)/);
 });
 
 test("transaction recovery has an explicit guarded state machine",()=>{

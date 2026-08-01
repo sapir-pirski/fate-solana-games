@@ -18,9 +18,7 @@ ENV NODE_ENV=production \
     WRANGLER_LOG_PATH=/data/wrangler.log \
     MINIFLARE_REGISTRY_PATH=/data/registry
 WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# The pinned Node image already includes the system CA trust bundle.
 RUN groupadd --system --gid 10001 fate && useradd --system --uid 10001 --gid fate --home /app fate
 COPY --from=runtime-dependencies --chown=fate:fate /app/node_modules /app/node_modules
 COPY --from=build --chown=fate:fate /app/dist /app/dist

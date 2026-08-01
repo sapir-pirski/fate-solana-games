@@ -102,8 +102,8 @@ For isolated development and recovery testing, copy `local.env.example` to `loca
 ./scripts/local-platform.sh up
 ```
 
-This starts the application on `http://localhost:3100`, PostgreSQL on port 55432,
-the PostgreSQL-backed coordination worker, Prometheus on `http://localhost:9090`, Grafana on
+This starts the application with its persistent local D1 database on `http://localhost:3100`,
+Prometheus on `http://localhost:9090`, Grafana on
 `http://localhost:3001`, and Loki on port 3101. All published ports bind only to
 localhost. The stack uses persistent Docker volumes and devnet-only application
 settings. It never imports production secrets or production game state.
@@ -116,7 +116,7 @@ the stack.
 Run the fast build, security, and unit suites with `npm test` and
 `npm run test:unit`. With the local platform running, use
 `npm run test:integration`, `npm run test:contract`, and
-`npm run test:browser` for PostgreSQL, API-contract, and desktop/mobile browser
+`npm run test:browser` for D1 integration, API-contract, and desktop/mobile browser
 coverage. `npm run test:load` runs the read-only k6 workload against port 3100.
 
 Failure recovery is deliberately opt-in because it restarts local containers:

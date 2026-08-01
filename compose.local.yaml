@@ -11,9 +11,6 @@ services:
       APP_REVISION: local-compose
       PORT: "3000"
       WRANGLER_LOG_LEVEL: warn
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
-      DATABASE_POOL_SIZE: "10"
-      DATABASE_SSL: disable
       INDEXER_AUTH_TOKEN: ${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}
       NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
@@ -34,102 +31,9 @@ services:
       - 127.0.0.1:${FATE_LOCAL_PORT:-3100}:3000
     volumes:
       - app_state:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [frontend, backend, observability]
+    networks: [frontend, observability]
     labels:
       fate.local.component: app
-
-  postgres:
-    image: postgres:16-bookworm
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fate}
-      POSTGRES_USER: ${POSTGRES_USER:-fate_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}
-    ports:
-      - 127.0.0.1:${POSTGRES_PORT:-5433}:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    networks: [frontend, backend, observability]
-    labels:
-      fate.local.component: postgres
-
-  indexer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: fate-platform:local
-    restart: unless-stopped
-    command: [node_modules/.bin/tsx, indexer/cli.ts, run]
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
-      SOLANA_CLUSTER: ${SOLANA_CLUSTER:-devnet}
-      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-      SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.devnet.solana.com}
-      COORDINATION_HEALTH_PORT: "9465"
-      OTEL_SERVICE_NAME: fate-coordination-worker
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
-      SOLANA_GENESIS_HASH: ${SOLANA_GENESIS_HASH:-}
-      FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
-      INDEXER_POLL_MS: ${INDEXER_POLL_MS:-15000}
-      INDEXER_MAX_BACKFILL_PAGES: ${INDEXER_MAX_BACKFILL_PAGES:-100}
-      INDEXER_HEALTH_PORT: "9464"
-    ports:
-      - 127.0.0.1:${INDEXER_HEALTH_PORT:-9464}:9464
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [frontend, backend, observability]
-    healthcheck:
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:9464/health').then(r=>{if(r.status!==200&&r.status!==503)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      start_period: 90s
-      retries: 3
-    labels:
-      fate.local.component: indexer
-
-  coordination-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: fate-platform:local
-    restart: unless-stopped
-    command: [node_modules/.bin/tsx, worker/coordination-worker.ts]
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
-      DATABASE_SSL: disable
-      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-      SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.devnet.solana.com}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:9465/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    networks: [backend, observability]
-    labels:
-      fate.local.component: coordination-worker
-
-  postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.18.1
-    restart: unless-stopped
-    environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [observability, backend]
 
   prometheus:
     image: prom/prometheus:v3.7.3
@@ -144,7 +48,7 @@ services:
     volumes:
       - ./deploy/local/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
-    depends_on: [app, postgres-exporter]
+    depends_on: [app]
     networks: [frontend, observability]
 
   loki:
@@ -167,7 +71,7 @@ services:
     volumes:
       - ./deploy/local/tempo.yaml:/etc/tempo.yaml:ro
       - tempo_data:/var/tempo
-    networks: [frontend, backend, observability]
+    networks: [frontend, observability]
 
   alloy:
     image: grafana/alloy:v1.11.3
@@ -199,14 +103,11 @@ services:
 
 networks:
   frontend: {}
-  backend:
-    internal: true
   observability:
     internal: true
 
 volumes:
   app_state: {}
-  postgres_data: {}
   prometheus_data: {}
   loki_data: {}
   tempo_data: {}

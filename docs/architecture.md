@@ -11,8 +11,8 @@ FATE is split by responsibility so custody and game rules cannot accidentally le
 - `lib/` contains environment-neutral clients, contracts, validation and utilities.
 - `server/services/` is the application-service boundary used by API handlers.
 - `server/repositories/` defines persistence contracts; database adapters remain replaceable.
-- `db/` owns Drizzle schemas and concrete D1/PostgreSQL connections.
-- `indexer/` owns finalized Solana ingestion, retry and reconciliation.
+- `db/` owns the canonical Drizzle schema and the sole D1 connection.
+- `indexer/` contains environment-neutral Solana decoding, RPC failover and retry utilities used by D1-backed application workflows.
 - `programs/` owns Anchor programs and on-chain custody rules.
 - `infra/` documents provider-neutral deployment and observability assets.
 
@@ -26,4 +26,4 @@ The browser may prepare and request transactions but never holds treasury, oracl
 
 ## Release units
 
-The web application and API ship together. Anchor programs and the indexer have independent validation and release gates because they have different security and rollback constraints.
+The web application, API, and D1 migrations ship together. Anchor programs retain an independent validation and release gate because on-chain custody has different security and rollback constraints.
