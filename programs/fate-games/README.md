@@ -15,7 +15,7 @@ for Jackpot, Coinflip, and Daily Case.
 - Timed-out Jackpot and Coinflip games have permissionless refund paths.
 - Timed-out Daily Case requests can be cleared by the player.
 - Administration uses a two-step authority transfer and emits configuration events.
-- Treasury, randomness authority, fees, and wager limits use a 24-hour
+- Treasury, randomness provider/queue, fees, and wager limits use a 24-hour
   propose/apply timelock; the administrator can cancel a pending update.
 - Pausing prevents new wagers and opens while preserving settlement/refund paths.
 - Terminal games can be closed only after their vault has no remaining spendable
@@ -41,16 +41,28 @@ proposal, application, or cancellation emits an on-chain event.
 
 ## Randomness boundary
 
-The current development interface accepts randomness from a configured signing
-authority and records the full result in program state and settlement events. This
-is deterministic and auditable after settlement, but it is **not production VRF**:
-the authority could choose bytes or withhold an unfavorable result. Timeout paths
-prevent fund loss but cannot prevent denial of service.
+Randomness uses Switchboard On-Demand's Solana commit/reveal accounts. The
+configured provider program and queue are timelocked. Every game binds one
+provider-owned randomness account before reveal and records its seed slot. A
+permanent `RandomnessReceipt` PDA makes that commitment account single-use across
+all FATE games.
 
-Before real-value deployment, replace `verify_randomness_authority` and raw byte
-arguments with a pinned, audited Solana randomness-provider adapter that validates
-provider-owned request accounts, request identity, fulfillment status, and freshness.
-Do not enable mainnet wagers with the development randomness interface.
+At commitment, the program verifies the provider owner, account discriminator,
+configured queue, an unrevealed value, and the strict `seed_slot == clock.slot - 1`
+freshness rule. At settlement, it requires the same account and seed slot and calls
+`RandomnessAccountData::get_value(clock.slot)`. Consequently, the provider reveal
+and permissionless FATE settlement instruction must be composed in the same
+transaction. The raw value, account, seed slot, reveal slot, and deterministic
+outcome are stored on-chain and emitted in settlement events.
+
+Provider liveness is not assumed: the existing ten-minute timeout paths return
+paid wagers or clear a free Daily Case request. Before mainnet, pin the audited
+provider deployment and queue for that cluster, run validator-level adversarial
+transaction tests, and obtain an independent program audit.
+
+The `/verify` browser page reads both accounts directly from the configured Solana
+RPC, checks provider ownership and queue binding, compares slots and random bytes,
+and independently reproduces the winner/reward without using the FATE API.
 
 ## Local verification
 

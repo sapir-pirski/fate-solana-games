@@ -6,6 +6,7 @@ const source = await readFile(new URL("../programs/fate-games/src/lib.rs", impor
 const anchor = await readFile(new URL("../Anchor.toml", import.meta.url), "utf8");
 const envExample = await readFile(new URL("../.env.example", import.meta.url), "utf8");
 const programReadme = await readFile(new URL("../programs/fate-games/README.md", import.meta.url), "utf8");
+const verifier = await readFile(new URL("../lib/fairness.ts", import.meta.url), "utf8");
 
 test("program IDs stay consistent across Anchor and web configuration", () => {
   const id = source.match(/declare_id!\("([1-9A-HJ-NP-Za-km-z]+)"\)/)?.[1];
@@ -30,9 +31,24 @@ test("custody paths use checked arithmetic and constrained PDA vaults", () => {
   assert.match(source, /seeds = \[DAILY_VAULT_SEED\]/);
 });
 
-test("development randomness is explicitly forbidden for mainnet", () => {
-  assert.match(programReadme, /not production VRF/i);
-  assert.match(programReadme, /Do not enable mainnet wagers/i);
+test("Switchboard commitments are provider-bound, fresh, and replay protected", () => {
+  assert.match(source, /RandomnessAccountData::parse/);
+  assert.match(source, /get_value\(clock_slot\)/);
+  assert.match(source, /data\.seed_slot == expected_seed_slot/);
+  assert.match(source, /data\.reveal_slot == 0 && data\.value == \[0; 32\]/);
+  assert.match(source, /RANDOMNESS_RECEIPT_SEED/);
+  assert.match(source, /InvalidRandomnessProgram/);
+  assert.match(source, /InvalidRandomnessQueue/);
+  assert.match(programReadme, /Switchboard On-Demand/i);
+});
+
+test("public verifier reads Solana directly and reproduces every game outcome", () => {
+  assert.match(verifier, /connection\.getAccountInfo/);
+  assert.match(verifier, /providerInfo\.owner\.equals/);
+  assert.match(verifier, /provider\.seedSlot === game\.seedSlot/);
+  assert.match(verifier, /sameBytes\(provider\.value, game\.randomness\)/);
+  assert.match(verifier, /weightedWinner/);
+  assert.match(verifier, /dailyReward/);
 });
 
 test("economic configuration changes are delayed and observable", () => {

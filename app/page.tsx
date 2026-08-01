@@ -135,7 +135,7 @@ function Fairness({ hash = "A7f3...9c2B" }: { hash?: string }) {
     <div className="fairness-title"><ShieldCheck size={18} /><span>Provably fair</span><small>ON-CHAIN</small></div>
     <p>Every outcome is generated and verified on Solana. No hidden odds. No trust required.</p>
     <div className="hash"><code>{hash}</code><button onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy hash">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div>
-    <details className="fairness-details"><summary>How fairness works <ArrowUpRight size={14} /></summary><p>Each wager is held by a program-owned vault. The published randomness value selects the result, and the settlement event can be independently checked against the transaction.</p></details>
+    <details className="fairness-details"><summary>How fairness works <ArrowUpRight size={14} /></summary><p>Each wager is locked before a Switchboard commitment is bound to the game. The revealed value and deterministic result remain in the Solana account.</p><a href="/verify">Open independent verifier <ArrowUpRight size={14}/></a></details>
   </div>;
 }
 

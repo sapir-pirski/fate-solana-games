@@ -2,6 +2,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, Transfer};
+use switchboard_on_demand::accounts::RandomnessAccountData;
 
 declare_id!("Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ");
 
@@ -12,6 +13,7 @@ const COINFLIP_SEED: &[u8] = b"coinflip";
 const COINFLIP_VAULT_SEED: &[u8] = b"coinflip-vault";
 const DAILY_SEED: &[u8] = b"daily";
 const DAILY_VAULT_SEED: &[u8] = b"daily-vault";
+const RANDOMNESS_RECEIPT_SEED: &[u8] = b"randomness-use";
 const MAX_JACKPOT_ENTRIES: usize = 128;
 const BPS_DENOMINATOR: u64 = 10_000;
 const RANDOMNESS_TIMEOUT_SECONDS: i64 = 600;
@@ -24,14 +26,17 @@ pub mod fate_games {
 
     pub fn initialize_config(
         ctx: Context<InitializeConfig>,
-        randomness_authority: Pubkey,
+        randomness_program: Pubkey,
+        randomness_queue: Pubkey,
         treasury: Pubkey,
         fee_bps: u16,
         min_wager: u64,
         max_wager: u64,
     ) -> Result<()> {
         require!(
-            randomness_authority != Pubkey::default() && treasury != Pubkey::default(),
+            randomness_program != Pubkey::default()
+                && randomness_queue != Pubkey::default()
+                && treasury != Pubkey::default(),
             FateError::InvalidAuthority
         );
         require!(fee_bps <= 1_000, FateError::FeeTooHigh);
@@ -42,9 +47,11 @@ pub mod fate_games {
         let config = &mut ctx.accounts.config;
         config.admin = ctx.accounts.admin.key();
         config.pending_admin = Pubkey::default();
-        config.randomness_authority = randomness_authority;
+        config.randomness_program = randomness_program;
+        config.randomness_queue = randomness_queue;
         config.treasury = treasury;
-        config.pending_randomness_authority = Pubkey::default();
+        config.pending_randomness_program = Pubkey::default();
+        config.pending_randomness_queue = Pubkey::default();
         config.pending_treasury = Pubkey::default();
         config.fee_bps = fee_bps;
         config.pending_fee_bps = 0;
@@ -57,7 +64,8 @@ pub mod fate_games {
         config.bump = ctx.bumps.config;
         emit!(ConfigInitialized {
             admin: config.admin,
-            randomness_authority,
+            randomness_program,
+            randomness_queue,
             treasury
         });
         Ok(())
@@ -71,14 +79,17 @@ pub mod fate_games {
 
     pub fn propose_config_update(
         ctx: Context<AdminConfig>,
-        randomness_authority: Pubkey,
+        randomness_program: Pubkey,
+        randomness_queue: Pubkey,
         treasury: Pubkey,
         fee_bps: u16,
         min_wager: u64,
         max_wager: u64,
     ) -> Result<()> {
         require!(
-            randomness_authority != Pubkey::default() && treasury != Pubkey::default(),
+            randomness_program != Pubkey::default()
+                && randomness_queue != Pubkey::default()
+                && treasury != Pubkey::default(),
             FateError::InvalidAuthority
         );
         require!(fee_bps <= 1_000, FateError::FeeTooHigh);
@@ -91,7 +102,8 @@ pub mod fate_games {
             .checked_add(CONFIG_TIMELOCK_SECONDS)
             .ok_or(FateError::ArithmeticOverflow)?;
         let config = &mut ctx.accounts.config;
-        config.pending_randomness_authority = randomness_authority;
+        config.pending_randomness_program = randomness_program;
+        config.pending_randomness_queue = randomness_queue;
         config.pending_treasury = treasury;
         config.pending_fee_bps = fee_bps;
         config.pending_min_wager = min_wager;
@@ -99,7 +111,8 @@ pub mod fate_games {
         config.pending_config_effective_at = effective_at;
         emit!(ConfigUpdateProposed {
             admin: config.admin,
-            randomness_authority,
+            randomness_program,
+            randomness_queue,
             treasury,
             fee_bps,
             min_wager,
@@ -119,9 +132,11 @@ pub mod fate_games {
             Clock::get()?.unix_timestamp >= config.pending_config_effective_at,
             FateError::ConfigTimelockActive
         );
-        let previous_randomness_authority = config.randomness_authority;
+        let previous_randomness_program = config.randomness_program;
+        let previous_randomness_queue = config.randomness_queue;
         let previous_treasury = config.treasury;
-        config.randomness_authority = config.pending_randomness_authority;
+        config.randomness_program = config.pending_randomness_program;
+        config.randomness_queue = config.pending_randomness_queue;
         config.treasury = config.pending_treasury;
         config.fee_bps = config.pending_fee_bps;
         config.min_wager = config.pending_min_wager;
@@ -129,8 +144,10 @@ pub mod fate_games {
         clear_pending_config(config);
         emit!(ConfigUpdated {
             admin: config.admin,
-            previous_randomness_authority,
-            randomness_authority: config.randomness_authority,
+            previous_randomness_program,
+            randomness_program: config.randomness_program,
+            previous_randomness_queue,
+            randomness_queue: config.randomness_queue,
             previous_treasury,
             treasury: config.treasury,
             fee_bps: config.fee_bps,
@@ -185,6 +202,9 @@ pub mod fate_games {
         round.randomness_requested_at = 0;
         round.total_lamports = 0;
         round.randomness = [0; 32];
+        round.randomness_account = Pubkey::default();
+        round.randomness_seed_slot = 0;
+        round.randomness_reveal_slot = 0;
         round.winner = Pubkey::default();
         round.entries = Vec::new();
         round.refund_claimed = Vec::new();
@@ -238,28 +258,49 @@ pub mod fate_games {
     }
 
     pub fn request_jackpot_randomness(ctx: Context<RequestJackpotRandomness>) -> Result<()> {
+        let clock = Clock::get()?;
         let now = Clock::get()?.unix_timestamp;
+        let game_key = ctx.accounts.round.key();
+        let seed_slot = bind_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            &mut ctx.accounts.randomness_receipt,
+            game_key,
+            GameType::Jackpot,
+            clock.slot,
+            ctx.bumps.randomness_receipt,
+        )?;
         let round = &mut ctx.accounts.round;
         require!(round.state == GameState::Open, FateError::InvalidGameState);
         require!(now >= round.end_ts, FateError::RoundStillOpen);
         require!(round.total_lamports > 0, FateError::EmptyGame);
         round.state = GameState::RandomnessRequested;
         round.randomness_requested_at = now;
+        round.randomness_account = ctx.accounts.randomness_account.key();
+        round.randomness_seed_slot = seed_slot;
+        round.randomness_reveal_slot = 0;
         emit!(RandomnessRequested {
             game: round.key(),
-            game_type: GameType::Jackpot
+            game_type: GameType::Jackpot,
+            randomness_account: round.randomness_account,
+            seed_slot,
         });
         Ok(())
     }
 
-    pub fn settle_jackpot(ctx: Context<SettleJackpot>, randomness: [u8; 32]) -> Result<()> {
-        verify_randomness_authority(&ctx.accounts.config, &ctx.accounts.randomness_authority)?;
+    pub fn settle_jackpot(ctx: Context<SettleJackpot>) -> Result<()> {
+        let (randomness, reveal_slot) = read_revealed_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            ctx.accounts.round.randomness_account,
+            ctx.accounts.round.randomness_seed_slot,
+            Clock::get()?.slot,
+        )?;
         let round = &mut ctx.accounts.round;
         require!(
             round.state == GameState::RandomnessRequested,
             FateError::InvalidGameState
         );
-        require!(randomness != [0; 32], FateError::InvalidRandomness);
         let selected = weighted_winner(&round.entries, round.total_lamports, &randomness)?;
         require_keys_eq!(
             selected,
@@ -288,6 +329,7 @@ pub mod fate_games {
         )?;
         round.state = GameState::Settled;
         round.randomness = randomness;
+        round.randomness_reveal_slot = reveal_slot;
         round.winner = selected;
         emit!(GameSettled {
             game: round.key(),
@@ -296,7 +338,10 @@ pub mod fate_games {
             wager: round.total_lamports,
             payout,
             fee,
-            randomness
+            randomness,
+            randomness_account: round.randomness_account,
+            seed_slot: round.randomness_seed_slot,
+            reveal_slot,
         });
         Ok(())
     }
@@ -406,6 +451,9 @@ pub mod fate_games {
         game.expires_at = expires_at;
         game.randomness_requested_at = 0;
         game.randomness = [0; 32];
+        game.randomness_account = Pubkey::default();
+        game.randomness_seed_slot = 0;
+        game.randomness_reveal_slot = 0;
         game.winner = Pubkey::default();
         game.bump = ctx.bumps.game;
         ctx.accounts.vault.game = game.key();
@@ -422,6 +470,16 @@ pub mod fate_games {
     pub fn join_coinflip(ctx: Context<JoinCoinflip>) -> Result<()> {
         assert_live(&ctx.accounts.config)?;
         let now = Clock::get()?.unix_timestamp;
+        let game_key = ctx.accounts.game.key();
+        let seed_slot = bind_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            &mut ctx.accounts.randomness_receipt,
+            game_key,
+            GameType::Coinflip,
+            Clock::get()?.slot,
+            ctx.bumps.randomness_receipt,
+        )?;
         let game = &mut ctx.accounts.game;
         require!(game.state == GameState::Open, FateError::InvalidGameState);
         require!(now < game.expires_at, FateError::GameExpired);
@@ -442,25 +500,35 @@ pub mod fate_games {
         game.joiner = ctx.accounts.joiner.key();
         game.state = GameState::RandomnessRequested;
         game.randomness_requested_at = now;
+        game.randomness_account = ctx.accounts.randomness_account.key();
+        game.randomness_seed_slot = seed_slot;
+        game.randomness_reveal_slot = 0;
         emit!(CoinflipJoined {
             game: game.key(),
             joiner: game.joiner
         });
         emit!(RandomnessRequested {
             game: game.key(),
-            game_type: GameType::Coinflip
+            game_type: GameType::Coinflip,
+            randomness_account: game.randomness_account,
+            seed_slot,
         });
         Ok(())
     }
 
-    pub fn settle_coinflip(ctx: Context<SettleCoinflip>, randomness: [u8; 32]) -> Result<()> {
-        verify_randomness_authority(&ctx.accounts.config, &ctx.accounts.randomness_authority)?;
+    pub fn settle_coinflip(ctx: Context<SettleCoinflip>) -> Result<()> {
+        let (randomness, reveal_slot) = read_revealed_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            ctx.accounts.game.randomness_account,
+            ctx.accounts.game.randomness_seed_slot,
+            Clock::get()?.slot,
+        )?;
         let game = &mut ctx.accounts.game;
         require!(
             game.state == GameState::RandomnessRequested,
             FateError::InvalidGameState
         );
-        require!(randomness != [0; 32], FateError::InvalidRandomness);
         require_keys_eq!(
             ctx.accounts.config.treasury,
             ctx.accounts.treasury.key(),
@@ -499,6 +567,7 @@ pub mod fate_games {
         )?;
         game.state = GameState::Settled;
         game.randomness = randomness;
+        game.randomness_reveal_slot = reveal_slot;
         game.winner = winner;
         emit!(GameSettled {
             game: game.key(),
@@ -507,7 +576,10 @@ pub mod fate_games {
             wager: pot,
             payout,
             fee,
-            randomness
+            randomness,
+            randomness_account: game.randomness_account,
+            seed_slot: game.randomness_seed_slot,
+            reveal_slot,
         });
         Ok(())
     }
@@ -572,7 +644,10 @@ pub mod fate_games {
     }
 
     pub fn close_coinflip(ctx: Context<CloseCoinflip>) -> Result<()> {
-        require!(is_terminal(ctx.accounts.game.state), FateError::GameNotTerminal);
+        require!(
+            is_terminal(ctx.accounts.game.state),
+            FateError::GameNotTerminal
+        );
         require!(
             vault_available(&ctx.accounts.vault.to_account_info(), CoinflipVault::SPACE)? == 0,
             FateError::OutstandingLiabilities
@@ -592,6 +667,9 @@ pub mod fate_games {
         daily.last_opened_at = 0;
         daily.randomness_requested_at = 0;
         daily.randomness = [0; 32];
+        daily.randomness_account = Pubkey::default();
+        daily.randomness_seed_slot = 0;
+        daily.randomness_reveal_slot = 0;
         daily.reward = 0;
         daily.bump = ctx.bumps.daily;
         Ok(())
@@ -600,6 +678,16 @@ pub mod fate_games {
     pub fn open_daily_case(ctx: Context<OpenDailyCase>) -> Result<()> {
         assert_live(&ctx.accounts.config)?;
         let now = Clock::get()?.unix_timestamp;
+        let game_key = ctx.accounts.daily.key();
+        let seed_slot = bind_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            &mut ctx.accounts.randomness_receipt,
+            game_key,
+            GameType::DailyCase,
+            Clock::get()?.slot,
+            ctx.bumps.randomness_receipt,
+        )?;
         let daily = &mut ctx.accounts.daily;
         require!(
             daily.state != GameState::RandomnessRequested,
@@ -615,17 +703,27 @@ pub mod fate_games {
         );
         daily.state = GameState::RandomnessRequested;
         daily.randomness_requested_at = now;
+        daily.randomness_account = ctx.accounts.randomness_account.key();
+        daily.randomness_seed_slot = seed_slot;
+        daily.randomness_reveal_slot = 0;
         daily.reward = 0;
         emit!(RandomnessRequested {
             game: daily.key(),
-            game_type: GameType::DailyCase
+            game_type: GameType::DailyCase,
+            randomness_account: daily.randomness_account,
+            seed_slot,
         });
         Ok(())
     }
 
-    pub fn settle_daily_case(ctx: Context<SettleDailyCase>, randomness: [u8; 32]) -> Result<()> {
-        verify_randomness_authority(&ctx.accounts.config, &ctx.accounts.randomness_authority)?;
-        require!(randomness != [0; 32], FateError::InvalidRandomness);
+    pub fn settle_daily_case(ctx: Context<SettleDailyCase>) -> Result<()> {
+        let (randomness, reveal_slot) = read_revealed_randomness(
+            &ctx.accounts.config,
+            &ctx.accounts.randomness_account.to_account_info(),
+            ctx.accounts.daily.randomness_account,
+            ctx.accounts.daily.randomness_seed_slot,
+            Clock::get()?.slot,
+        )?;
         let daily = &mut ctx.accounts.daily;
         require!(
             daily.state == GameState::RandomnessRequested,
@@ -647,12 +745,16 @@ pub mod fate_games {
         daily.state = GameState::Settled;
         daily.last_opened_at = Clock::get()?.unix_timestamp;
         daily.randomness = randomness;
+        daily.randomness_reveal_slot = reveal_slot;
         daily.reward = reward;
         emit!(DailyCaseSettled {
             account: daily.key(),
             player: daily.player,
             reward,
-            randomness
+            randomness,
+            randomness_account: daily.randomness_account,
+            seed_slot: daily.randomness_seed_slot,
+            reveal_slot,
         });
         Ok(())
     }
@@ -720,7 +822,8 @@ fn assert_live(config: &Config) -> Result<()> {
     Ok(())
 }
 fn clear_pending_config(config: &mut Config) {
-    config.pending_randomness_authority = Pubkey::default();
+    config.pending_randomness_program = Pubkey::default();
+    config.pending_randomness_queue = Pubkey::default();
     config.pending_treasury = Pubkey::default();
     config.pending_fee_bps = 0;
     config.pending_min_wager = 0;
@@ -742,13 +845,76 @@ fn assert_wager(config: &Config, amount: u64) -> Result<()> {
     );
     Ok(())
 }
-fn verify_randomness_authority(config: &Config, signer: &Signer) -> Result<()> {
+fn validate_randomness_account(config: &Config, account: &AccountInfo) -> Result<()> {
     require_keys_eq!(
-        config.randomness_authority,
-        signer.key(),
-        FateError::InvalidRandomnessAuthority
+        *account.owner,
+        config.randomness_program,
+        FateError::InvalidRandomnessProgram
+    );
+    let data = RandomnessAccountData::parse(account.data.borrow())
+        .map_err(|_| error!(FateError::InvalidRandomnessAccount))?;
+    require!(
+        data.queue.to_bytes() == config.randomness_queue.to_bytes(),
+        FateError::InvalidRandomnessQueue
     );
     Ok(())
+}
+
+fn bind_randomness(
+    config: &Config,
+    account: &AccountInfo,
+    receipt: &mut Account<RandomnessReceipt>,
+    game: Pubkey,
+    game_type: GameType,
+    clock_slot: u64,
+    bump: u8,
+) -> Result<u64> {
+    validate_randomness_account(config, account)?;
+    let data = RandomnessAccountData::parse(account.data.borrow())
+        .map_err(|_| error!(FateError::InvalidRandomnessAccount))?;
+    let expected_seed_slot = clock_slot
+        .checked_sub(1)
+        .ok_or(FateError::RandomnessNotFresh)?;
+    require!(
+        data.seed_slot == expected_seed_slot,
+        FateError::RandomnessNotFresh
+    );
+    require!(
+        data.reveal_slot == 0 && data.value == [0; 32],
+        FateError::RandomnessAlreadyRevealed
+    );
+    receipt.randomness_account = account.key();
+    receipt.game = game;
+    receipt.game_type = game_type;
+    receipt.seed_slot = data.seed_slot;
+    receipt.bump = bump;
+    Ok(data.seed_slot)
+}
+
+fn read_revealed_randomness(
+    config: &Config,
+    account: &AccountInfo,
+    expected_account: Pubkey,
+    expected_seed_slot: u64,
+    clock_slot: u64,
+) -> Result<([u8; 32], u64)> {
+    require_keys_eq!(
+        account.key(),
+        expected_account,
+        FateError::WrongRandomnessAccount
+    );
+    validate_randomness_account(config, account)?;
+    let data = RandomnessAccountData::parse(account.data.borrow())
+        .map_err(|_| error!(FateError::InvalidRandomnessAccount))?;
+    require!(
+        data.seed_slot == expected_seed_slot,
+        FateError::RandomnessSeedMismatch
+    );
+    let value = data
+        .get_value(clock_slot)
+        .map_err(|_| error!(FateError::RandomnessNotResolved))?;
+    require!(value != [0; 32], FateError::InvalidRandomness);
+    Ok((value, data.reveal_slot))
 }
 fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
     amount
@@ -860,19 +1026,31 @@ pub struct EnterJackpot<'info> {
 
 #[derive(Accounts)]
 pub struct RequestJackpotRandomness<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
     #[account(mut, seeds = [JACKPOT_SEED, &round.id.to_le_bytes()], bump = round.bump)]
     pub round: Account<'info, JackpotRound>,
+    /// CHECK: Owner, discriminator, queue, commitment, and freshness are verified.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(init, payer = payer, space = RandomnessReceipt::SPACE, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct SettleJackpot<'info> {
-    pub randomness_authority: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, seeds = [JACKPOT_SEED, &round.id.to_le_bytes()], bump = round.bump)]
     pub round: Account<'info, JackpotRound>,
     #[account(mut, seeds = [JACKPOT_VAULT_SEED, round.key().as_ref()], bump = vault.bump, has_one = round)]
     pub vault: Account<'info, JackpotVault>,
+    /// CHECK: Switchboard account is fully verified by the settlement handler.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == round.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == round.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Jackpot @ FateError::WrongRandomnessAccount)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Validated against the deterministic selected winner.
     #[account(mut)]
     pub winner: UncheckedAccount<'info>,
@@ -932,18 +1110,25 @@ pub struct JoinCoinflip<'info> {
     pub game: Account<'info, CoinflipGame>,
     #[account(mut, seeds = [COINFLIP_VAULT_SEED, game.key().as_ref()], bump = vault.bump, has_one = game)]
     pub vault: Account<'info, CoinflipVault>,
+    /// CHECK: Owner, discriminator, queue, commitment, and freshness are verified.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(init, payer = joiner, space = RandomnessReceipt::SPACE, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct SettleCoinflip<'info> {
-    pub randomness_authority: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, seeds = [COINFLIP_SEED, &game.id.to_le_bytes()], bump = game.bump)]
     pub game: Account<'info, CoinflipGame>,
     #[account(mut, seeds = [COINFLIP_VAULT_SEED, game.key().as_ref()], bump = vault.bump, has_one = game)]
     pub vault: Account<'info, CoinflipVault>,
+    /// CHECK: Switchboard account is fully verified by the settlement handler.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == game.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == game.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Coinflip @ FateError::WrongRandomnessAccount)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Validated against the deterministic winner.
     #[account(mut)]
     pub winner: UncheckedAccount<'info>,
@@ -998,20 +1183,29 @@ pub struct InitializeDailyPlayer<'info> {
 
 #[derive(Accounts)]
 pub struct OpenDailyCase<'info> {
+    #[account(mut)]
     pub player: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, seeds = [DAILY_SEED, player.key().as_ref()], bump = daily.bump, has_one = player)]
     pub daily: Account<'info, DailyPlayer>,
+    /// CHECK: Owner, discriminator, queue, commitment, and freshness are verified.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(init, payer = player, space = RandomnessReceipt::SPACE, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct SettleDailyCase<'info> {
-    pub randomness_authority: Signer<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, seeds = [DAILY_SEED, player.key().as_ref()], bump = daily.bump, has_one = player)]
     pub daily: Account<'info, DailyPlayer>,
+    /// CHECK: Switchboard account is fully verified by the settlement handler.
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == daily.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == daily.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::DailyCase @ FateError::WrongRandomnessAccount)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Address constrained through daily.player.
     #[account(mut, address = daily.player)]
     pub player: UncheckedAccount<'info>,
@@ -1058,9 +1252,11 @@ pub struct FundDailyVault<'info> {
 pub struct Config {
     pub admin: Pubkey,
     pub pending_admin: Pubkey,
-    pub randomness_authority: Pubkey,
+    pub randomness_program: Pubkey,
+    pub randomness_queue: Pubkey,
     pub treasury: Pubkey,
-    pub pending_randomness_authority: Pubkey,
+    pub pending_randomness_program: Pubkey,
+    pub pending_randomness_queue: Pubkey,
     pub pending_treasury: Pubkey,
     pub fee_bps: u16,
     pub pending_fee_bps: u16,
@@ -1073,7 +1269,7 @@ pub struct Config {
     pub bump: u8,
 }
 impl Config {
-    pub const SPACE: usize = 8 + 32 * 6 + 2 + 2 + 8 * 5 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 * 8 + 2 + 2 + 8 * 5 + 1 + 1;
 }
 
 #[account]
@@ -1085,6 +1281,9 @@ pub struct JackpotRound {
     pub randomness_requested_at: i64,
     pub total_lamports: u64,
     pub randomness: [u8; 32],
+    pub randomness_account: Pubkey,
+    pub randomness_seed_slot: u64,
+    pub randomness_reveal_slot: u64,
     pub winner: Pubkey,
     pub entries: Vec<JackpotEntry>,
     pub refund_claimed: Vec<Pubkey>,
@@ -1099,6 +1298,9 @@ impl JackpotRound {
         + 8
         + 8
         + 32
+        + 32
+        + 8
+        + 8
         + 32
         + 4
         + MAX_JACKPOT_ENTRIES * JackpotEntry::SPACE
@@ -1136,11 +1338,14 @@ pub struct CoinflipGame {
     pub expires_at: i64,
     pub randomness_requested_at: i64,
     pub randomness: [u8; 32],
+    pub randomness_account: Pubkey,
+    pub randomness_seed_slot: u64,
+    pub randomness_reveal_slot: u64,
     pub winner: Pubkey,
     pub bump: u8,
 }
 impl CoinflipGame {
-    pub const SPACE: usize = 8 + 8 + 32 + 32 + 1 + 8 + 1 + 8 + 8 + 32 + 32 + 1;
+    pub const SPACE: usize = 8 + 8 + 32 + 32 + 1 + 8 + 1 + 8 + 8 + 32 + 32 + 8 + 8 + 32 + 1;
 }
 
 #[account]
@@ -1159,11 +1364,26 @@ pub struct DailyPlayer {
     pub last_opened_at: i64,
     pub randomness_requested_at: i64,
     pub randomness: [u8; 32],
+    pub randomness_account: Pubkey,
+    pub randomness_seed_slot: u64,
+    pub randomness_reveal_slot: u64,
     pub reward: u64,
     pub bump: u8,
 }
 impl DailyPlayer {
-    pub const SPACE: usize = 8 + 32 + 1 + 8 + 8 + 32 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 1 + 8 + 8 + 32 + 32 + 8 + 8 + 8 + 1;
+}
+
+#[account]
+pub struct RandomnessReceipt {
+    pub randomness_account: Pubkey,
+    pub game: Pubkey,
+    pub game_type: GameType,
+    pub seed_slot: u64,
+    pub bump: u8,
+}
+impl RandomnessReceipt {
+    pub const SPACE: usize = 8 + 32 + 32 + 1 + 8 + 1;
 }
 
 #[account]
@@ -1196,7 +1416,8 @@ pub enum GameType {
 #[event]
 pub struct ConfigInitialized {
     pub admin: Pubkey,
-    pub randomness_authority: Pubkey,
+    pub randomness_program: Pubkey,
+    pub randomness_queue: Pubkey,
     pub treasury: Pubkey,
 }
 #[event]
@@ -1206,8 +1427,10 @@ pub struct PauseChanged {
 #[event]
 pub struct ConfigUpdated {
     pub admin: Pubkey,
-    pub previous_randomness_authority: Pubkey,
-    pub randomness_authority: Pubkey,
+    pub previous_randomness_program: Pubkey,
+    pub randomness_program: Pubkey,
+    pub previous_randomness_queue: Pubkey,
+    pub randomness_queue: Pubkey,
     pub previous_treasury: Pubkey,
     pub treasury: Pubkey,
     pub fee_bps: u16,
@@ -1217,7 +1440,8 @@ pub struct ConfigUpdated {
 #[event]
 pub struct ConfigUpdateProposed {
     pub admin: Pubkey,
-    pub randomness_authority: Pubkey,
+    pub randomness_program: Pubkey,
+    pub randomness_queue: Pubkey,
     pub treasury: Pubkey,
     pub fee_bps: u16,
     pub min_wager: u64,
@@ -1257,6 +1481,8 @@ pub struct CoinflipJoined {
 pub struct RandomnessRequested {
     pub game: Pubkey,
     pub game_type: GameType,
+    pub randomness_account: Pubkey,
+    pub seed_slot: u64,
 }
 #[event]
 pub struct GameSettled {
@@ -1267,6 +1493,9 @@ pub struct GameSettled {
     pub payout: u64,
     pub fee: u64,
     pub randomness: [u8; 32],
+    pub randomness_account: Pubkey,
+    pub seed_slot: u64,
+    pub reveal_slot: u64,
 }
 #[event]
 pub struct GameRefunded {
@@ -1284,6 +1513,9 @@ pub struct DailyCaseSettled {
     pub player: Pubkey,
     pub reward: u64,
     pub randomness: [u8; 32],
+    pub randomness_account: Pubkey,
+    pub seed_slot: u64,
+    pub reveal_slot: u64,
 }
 #[event]
 pub struct DailyCaseTimedOut {
@@ -1321,8 +1553,22 @@ pub enum FateError {
     EmptyGame,
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
-    #[msg("Invalid randomness authority.")]
-    InvalidRandomnessAuthority,
+    #[msg("The randomness account is not owned by the configured provider program.")]
+    InvalidRandomnessProgram,
+    #[msg("The randomness account has invalid provider data.")]
+    InvalidRandomnessAccount,
+    #[msg("The randomness account belongs to an unconfigured oracle queue.")]
+    InvalidRandomnessQueue,
+    #[msg("The randomness commitment is stale or was not made in the previous slot.")]
+    RandomnessNotFresh,
+    #[msg("The randomness value was already revealed before the game committed to it.")]
+    RandomnessAlreadyRevealed,
+    #[msg("The supplied randomness account is not the one committed by this game.")]
+    WrongRandomnessAccount,
+    #[msg("The randomness seed slot differs from the committed slot.")]
+    RandomnessSeedMismatch,
+    #[msg("The provider has not revealed fresh randomness in this transaction slot.")]
+    RandomnessNotResolved,
     #[msg("Randomness cannot be zero.")]
     InvalidRandomness,
     #[msg("The supplied winner account is incorrect.")]
