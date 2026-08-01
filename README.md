@@ -87,8 +87,8 @@ hosting environment and the `FATE_AUTOMATION_TOKEN` GitHub repository secret.
 
 Object storage is intentionally not provisioned because FATE has no user-file
 workload. A custom domain can be attached later without changing application
-architecture. The old Nebius manifests remain only as rollback/reference
-material and are not required by the active deployment.
+architecture. The application and recovery workflow are provider-neutral and
+do not depend on resources from an inactive cloud deployment.
 
 For isolated development and recovery testing, copy `local.env.example` to `local.env`, replace every
 `replace-with-...` value, and run:
