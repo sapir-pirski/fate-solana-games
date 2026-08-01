@@ -47,7 +47,7 @@ function Coin({ side }: { side: "Heads" | "Tails" }) {
 }
 
 export default function GameCoin3D({ side }: { side: "Heads" | "Tails" }) {
-  return <div className="webgl-stage" aria-label={`Animated 3D coin showing ${side}`}>
+  return <div className="webgl-stage" role="img" aria-label={`Animated 3D coin showing ${side}`}>
     <Canvas camera={{ position: [0, 0, 5.8], fov: 40 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}>
       <ambientLight intensity={0.7} />
       <spotLight position={[4, 5, 6]} intensity={45} angle={0.5} penumbra={0.7} color="#c8ff4d" />

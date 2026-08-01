@@ -13,11 +13,13 @@
     "test:unit": "tsx --test tests/unit/*.test.ts",
     "test:integration": "tsx --test tests/integration/*.integration.ts tests/indexer-store.integration.ts",
     "test:browser": "playwright test tests/browser/platform.spec.ts",
+    "test:accessibility": "playwright test tests/browser/accessibility.spec.ts",
     "test:contract": "playwright test tests/browser/contracts.spec.ts --project=chromium",
     "test:load": "docker run --rm -i -e BASE_URL=${BASE_URL:-http://host.docker.internal:3100} grafana/k6:latest run - < tests/load/platform.k6.js",
     "test:failure": "bash tests/failure/run-recovery.sh",
     "test:all": "npm test && npm run test:unit && npm run test:integration && npm run test:contract && npm run test:browser",
     "test:devnet": "node scripts/devnet-smoke.mjs",
+    "test:bundle": "npm run build && node scripts/check-bundle-budget.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "indexer": "tsx indexer/cli.ts run",
@@ -48,6 +50,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@cloudflare/vite-plugin": "1.37.1",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",

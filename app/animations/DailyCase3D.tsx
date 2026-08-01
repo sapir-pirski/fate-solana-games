@@ -40,7 +40,7 @@ function Case({ opening, opened }: { opening: boolean; opened: boolean }) {
 }
 
 export default function DailyCase3D({ opening, opened }: { opening: boolean; opened: boolean }) {
-  return <div className="webgl-stage case-webgl" aria-label="Animated 3D daily reward case">
+  return <div className="webgl-stage case-webgl" role="img" aria-label="Animated 3D daily reward case">
     <Canvas camera={{ position: [0, 1.2, 6], fov: 42 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}>
       <ambientLight intensity={0.8} />
       <spotLight position={[4, 6, 5]} intensity={48} angle={0.55} penumbra={0.8} color="#9c71ff" />
