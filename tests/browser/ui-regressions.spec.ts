@@ -17,6 +17,12 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   const labelBox = await chanceLabel.boundingBox();
   expect(valueBox && labelBox && valueBox.y + valueBox.height <= labelBox.y).toBeTruthy();
 
+  const presets = page.getByRole("group", { name: "Jackpot amount presets" });
+  await presets.getByRole("button", { name: "0.10" }).click();
+  await expect(presets.getByRole("button", { name: "0.10" })).toHaveAttribute("aria-pressed", "true");
+  await presets.getByRole("button", { name: "1.00" }).click();
+  await expect(presets.getByRole("button", { name: "1.00" })).toHaveAttribute("aria-pressed", "true");
+
   await page.getByRole("button", { name: /Connect wallet to enter/ }).click();
   const walletDialog = page.getByRole("dialog", { name: "Connect a wallet" });
   await expect(walletDialog).toBeVisible();

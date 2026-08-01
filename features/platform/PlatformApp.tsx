@@ -170,7 +170,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
         <div className="pot-line"><span style={{width:"100%",background:"#c8ff4d"}} /></div>
         <div className="entry-label"><span>Your entry</span><span>Available: {connected && wallet.balance !== null ? wallet.balance.toFixed(3) : "—"} SOL</span></div>
         <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Jackpot entry amount in SOL"/><span aria-hidden="true">SOL</span><button type="button" onClick={() => setAmount(connected ? "24.82" : "1.00")}>MAX</button></div>
-        <div className="presets">{["0.10", "0.25", "0.50", "1.00"].map(v => <button className={amount === v ? "selected" : ""} key={v} onClick={() => setAmount(v)}>{v}</button>)}</div>
+        <div className="presets" role="group" aria-label="Jackpot amount presets">{["0.10", "0.25", "0.50", "1.00"].map(v => <button type="button" aria-pressed={amount === v} className={amount === v ? "selected" : ""} key={v} onClick={() => setAmount(v)}>{v}</button>)}</div>
         <button className="primary" disabled={submitting} aria-describedby="jackpot-action-hint" onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
         <div className="fee-note" id="jackpot-action-hint"><ShieldCheck size={14} /> {!connected ? "Opens the wallet connection popup" : !round ? "No open round is currently indexed" : "Secured by Solana · 3% winner fee"}</div>
       </div>
