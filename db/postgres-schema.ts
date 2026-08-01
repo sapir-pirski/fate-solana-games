@@ -1,4 +1,4 @@
-/** PostgreSQL bootstrap statements used by Nebius deployments. All statements
+/** PostgreSQL bootstrap statements used by optional portable Node deployments. All statements
  * are idempotent so a fresh instance and a restarted application converge on
  * the same schema. */
 export const POSTGRES_SCHEMA_STATEMENTS = [

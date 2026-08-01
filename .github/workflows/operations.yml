@@ -1,0 +1,57 @@
+name: Production operations
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-operations
+  cancel-in-progress: false
+
+jobs:
+  smoke-and-maintenance:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://fate-solana-games.sapirp.chatgpt.site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/production-smoke.mjs
+      - name: Run idempotent maintenance
+        env:
+          AUTOMATION_TOKEN: ${{ secrets.FATE_AUTOMATION_TOKEN }}
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --retry 3 --retry-all-errors
+          -X POST -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
+          "${BASE_URL}/api/internal/maintenance"
+
+  backup:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://fate-solana-games.sapirp.chatgpt.site
+    steps:
+      - name: Export D1 application data
+        env:
+          AUTOMATION_TOKEN: ${{ secrets.FATE_AUTOMATION_TOKEN }}
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --retry 3 --retry-all-errors
+          -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
+          "${BASE_URL}/api/internal/backup" -o fate-d1-backup.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fate-d1-backup-${{ github.run_id }}
+          path: fate-d1-backup.json
+          retention-days: 14
+          if-no-files-found: error
