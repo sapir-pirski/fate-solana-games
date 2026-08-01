@@ -4,8 +4,10 @@ dist
 node_modules
 .wrangler
 .env*
+local.env
+deploy/nebius/secret.yaml
+*.pem
 target
 .anchor
 test-ledger
 npm-debug.log
-

@@ -72,3 +72,21 @@ Run `npm run db:generate` after schema changes. Apply generated migrations throu
 6. Move authorities to multisig, configure production RPC/monitoring, and only then consider mainnet.
 
 See [SECURITY.md](SECURITY.md) for the launch security requirements.
+# Local platform
+
+The production deployment remains on Nebius. For isolated development and
+recovery testing, copy `local.env.example` to `local.env`, replace every
+`replace-with-...` value, and run:
+
+```sh
+./scripts/local-platform.sh up
+```
+
+This starts the application on `http://localhost:3100`, PostgreSQL on port 55432,
+Redis on port 56379, Prometheus on `http://localhost:9090`, Grafana on
+`http://localhost:3001`, and Loki on port 3101. All published ports bind only to
+localhost. The stack uses persistent Docker volumes and devnet-only application
+settings. It never imports production secrets or production game state.
+
+Use `./scripts/local-platform.sh status`, `health`, `logs`, and `down` to operate
+the stack. `./scripts/local-platform.sh ai-up` starts optional Ollama separately.

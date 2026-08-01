@@ -1,0 +1,177 @@
+name: fate-local
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fate-platform:local
+    restart: unless-stopped
+    environment:
+      APP_REVISION: local-compose
+      PORT: "3000"
+      WRANGLER_LOG_LEVEL: warn
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
+      DATABASE_POOL_SIZE: "10"
+      DATABASE_SSL: disable
+      INDEXER_AUTH_TOKEN: ${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}
+      NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
+      NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      NEXT_PUBLIC_FATE_PROGRAM_ID: ${NEXT_PUBLIC_FATE_PROGRAM_ID:?Set NEXT_PUBLIC_FATE_PROGRAM_ID in local.env}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
+      AI_MAX_REQUESTS_PER_WALLET_DAY: ${AI_MAX_REQUESTS_PER_WALLET_DAY:-50}
+      AI_MONTHLY_BUDGET_USD: ${AI_MONTHLY_BUDGET_USD:-5}
+      AI_AGENT_ARENA_ENABLED: "false"
+      AI_AGENT_ARENA_NETWORK: devnet
+    ports:
+      - 127.0.0.1:${FATE_LOCAL_PORT:-3100}:3000
+    volumes:
+      - app_state:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [frontend, backend, observability]
+    labels:
+      fate.local.component: app
+
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fate}
+      POSTGRES_USER: ${POSTGRES_USER:-fate_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:-5433}:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [frontend, backend, observability]
+    labels:
+      fate.local.component: postgres
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --save, "60", "1"]
+    ports:
+      - 127.0.0.1:${REDIS_PORT:-6380}:6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [frontend, backend, observability]
+    labels:
+      fate.local.component: redis
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.80.2
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [observability, backend]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.18.1
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [observability, backend]
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - 127.0.0.1:${PROMETHEUS_PORT:-9090}:9090
+    volumes:
+      - ./deploy/local/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    depends_on: [app, redis-exporter, postgres-exporter]
+    networks: [frontend, observability]
+
+  loki:
+    image: grafana/loki:3.5.7
+    restart: unless-stopped
+    command: [-config.file=/etc/loki/config.yaml]
+    ports:
+      - 127.0.0.1:${LOKI_PORT:-3101}:3100
+    volumes:
+      - ./deploy/local/loki.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    networks: [frontend, observability]
+
+  alloy:
+    image: grafana/alloy:v1.11.3
+    restart: unless-stopped
+    command: [run, /etc/alloy/config.alloy]
+    volumes:
+      - ./deploy/local/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy
+    depends_on: [loki]
+    networks: [observability]
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in local.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - 127.0.0.1:${GRAFANA_PORT:-3001}:3000
+    volumes:
+      - ./deploy/local/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/local/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    networks: [frontend, observability]
+
+  ollama:
+    image: ollama/ollama:0.13.4
+    profiles: [ai]
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:11434:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [frontend, backend]
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+  observability:
+    internal: true
+
+volumes:
+  app_state: {}
+  postgres_data: {}
+  redis_data: {}
+  prometheus_data: {}
+  loki_data: {}
+  alloy_data: {}
+  grafana_data: {}
+  ollama_data: {}

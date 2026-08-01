@@ -1,0 +1,38 @@
+discovery.docker "fate" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+discovery.relabel "fate" {
+  targets = discovery.docker.fate.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "fate-local"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "fate" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.fate.output
+  forward_to = [loki.write.local.receiver]
+  labels     = { stack = "fate-local" }
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -7,6 +7,10 @@ const sourceConfig = new URL("../dist/server/wrangler.json", import.meta.url);
 const runtimeConfig = new URL("../dist/server/.wrangler.runtime.json", import.meta.url).pathname;
 const allowedVariables = [
   "APP_REVISION",
+  "AI_AGENT_ARENA_ENABLED",
+  "AI_AGENT_ARENA_NETWORK",
+  "AI_MAX_REQUESTS_PER_WALLET_DAY",
+  "AI_MONTHLY_BUDGET_USD",
   "DATABASE_POOL_SIZE",
   "DATABASE_SSL",
   "DATABASE_URL",
@@ -16,6 +20,7 @@ const allowedVariables = [
   "NEXT_PUBLIC_SOLANA_RPC_URL",
   "OPENAI_API_KEY",
   "OPENAI_MODEL",
+  "SOLANA_RPC_URL",
 ];
 
 const config = JSON.parse(await readFile(sourceConfig, "utf8"));
@@ -30,7 +35,13 @@ await chmod(runtimeConfig, 0o600);
 
 const child = spawn(
   new URL("../node_modules/.bin/wrangler", import.meta.url).pathname,
-  ["dev", "--config", runtimeConfig, "--ip", "0.0.0.0", "--port", process.env.PORT ?? "3000", "--persist-to", "/data"],
+  [
+    "dev", "--config", runtimeConfig,
+    "--ip", "0.0.0.0",
+    "--port", process.env.PORT ?? "3000",
+    "--persist-to", "/data",
+    "--log-level", process.env.WRANGLER_LOG_LEVEL ?? "warn",
+  ],
   { stdio: "inherit", env: process.env },
 );
 
