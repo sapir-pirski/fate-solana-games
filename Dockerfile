@@ -16,6 +16,13 @@ ENV NODE_ENV=production \
     WRANGLER_LOG_PATH=/data/wrangler.log \
     MINIFLARE_REGISTRY_PATH=/data/registry
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl --fail --silent --show-error https://storage.eu-north1.nebius.cloud/msp-certs/ca.pem \
+       --output /usr/local/share/ca-certificates/nebius-msp.crt \
+    && update-ca-certificates \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 10001 fate && useradd --system --uid 10001 --gid fate --home /app fate
 COPY --from=build --chown=fate:fate /app /app
 RUN mkdir -p /data && chown fate:fate /data
