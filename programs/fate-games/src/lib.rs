@@ -16,6 +16,7 @@ const MAX_JACKPOT_ENTRIES: usize = 128;
 const BPS_DENOMINATOR: u64 = 10_000;
 const RANDOMNESS_TIMEOUT_SECONDS: i64 = 600;
 const DAILY_COOLDOWN_SECONDS: i64 = 86_400;
+const CONFIG_TIMELOCK_SECONDS: i64 = 86_400;
 
 #[program]
 pub mod fate_games {
@@ -43,9 +44,15 @@ pub mod fate_games {
         config.pending_admin = Pubkey::default();
         config.randomness_authority = randomness_authority;
         config.treasury = treasury;
+        config.pending_randomness_authority = Pubkey::default();
+        config.pending_treasury = Pubkey::default();
         config.fee_bps = fee_bps;
+        config.pending_fee_bps = 0;
         config.min_wager = min_wager;
         config.max_wager = max_wager;
+        config.pending_min_wager = 0;
+        config.pending_max_wager = 0;
+        config.pending_config_effective_at = 0;
         config.paused = false;
         config.bump = ctx.bumps.config;
         emit!(ConfigInitialized {
@@ -62,7 +69,7 @@ pub mod fate_games {
         Ok(())
     }
 
-    pub fn update_config(
+    pub fn propose_config_update(
         ctx: Context<AdminConfig>,
         randomness_authority: Pubkey,
         treasury: Pubkey,
@@ -79,23 +86,68 @@ pub mod fate_games {
             min_wager > 0 && max_wager >= min_wager,
             FateError::InvalidWagerLimits
         );
+        let effective_at = Clock::get()?
+            .unix_timestamp
+            .checked_add(CONFIG_TIMELOCK_SECONDS)
+            .ok_or(FateError::ArithmeticOverflow)?;
         let config = &mut ctx.accounts.config;
-        let previous_randomness_authority = config.randomness_authority;
-        let previous_treasury = config.treasury;
-        config.randomness_authority = randomness_authority;
-        config.treasury = treasury;
-        config.fee_bps = fee_bps;
-        config.min_wager = min_wager;
-        config.max_wager = max_wager;
-        emit!(ConfigUpdated {
+        config.pending_randomness_authority = randomness_authority;
+        config.pending_treasury = treasury;
+        config.pending_fee_bps = fee_bps;
+        config.pending_min_wager = min_wager;
+        config.pending_max_wager = max_wager;
+        config.pending_config_effective_at = effective_at;
+        emit!(ConfigUpdateProposed {
             admin: config.admin,
-            previous_randomness_authority,
             randomness_authority,
-            previous_treasury,
             treasury,
             fee_bps,
             min_wager,
             max_wager,
+            effective_at,
+        });
+        Ok(())
+    }
+
+    pub fn apply_config_update(ctx: Context<ApplyConfigUpdate>) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        require!(
+            config.pending_config_effective_at > 0,
+            FateError::NoPendingConfigUpdate
+        );
+        require!(
+            Clock::get()?.unix_timestamp >= config.pending_config_effective_at,
+            FateError::ConfigTimelockActive
+        );
+        let previous_randomness_authority = config.randomness_authority;
+        let previous_treasury = config.treasury;
+        config.randomness_authority = config.pending_randomness_authority;
+        config.treasury = config.pending_treasury;
+        config.fee_bps = config.pending_fee_bps;
+        config.min_wager = config.pending_min_wager;
+        config.max_wager = config.pending_max_wager;
+        clear_pending_config(config);
+        emit!(ConfigUpdated {
+            admin: config.admin,
+            previous_randomness_authority,
+            randomness_authority: config.randomness_authority,
+            previous_treasury,
+            treasury: config.treasury,
+            fee_bps: config.fee_bps,
+            min_wager: config.min_wager,
+            max_wager: config.max_wager,
+        });
+        Ok(())
+    }
+
+    pub fn cancel_config_update(ctx: Context<AdminConfig>) -> Result<()> {
+        require!(
+            ctx.accounts.config.pending_config_effective_at > 0,
+            FateError::NoPendingConfigUpdate
+        );
+        clear_pending_config(&mut ctx.accounts.config);
+        emit!(ConfigUpdateCancelled {
+            admin: ctx.accounts.admin.key(),
         });
         Ok(())
     }
@@ -299,6 +351,30 @@ pub mod fate_games {
         Ok(())
     }
 
+    pub fn close_jackpot(ctx: Context<CloseJackpot>) -> Result<()> {
+        let round = &ctx.accounts.round;
+        require!(is_terminal(round.state), FateError::GameNotTerminal);
+        if round.state == GameState::Refunded {
+            require!(
+                round
+                    .entries
+                    .iter()
+                    .all(|entry| round.refund_claimed.contains(&entry.player)),
+                FateError::OutstandingLiabilities
+            );
+        }
+        require!(
+            vault_available(&ctx.accounts.vault.to_account_info(), JackpotVault::SPACE)? == 0,
+            FateError::OutstandingLiabilities
+        );
+        emit!(GameAccountsClosed {
+            game: round.key(),
+            game_type: GameType::Jackpot,
+            rent_recipient: ctx.accounts.creator.key(),
+        });
+        Ok(())
+    }
+
     pub fn create_coinflip(
         ctx: Context<CreateCoinflip>,
         game_id: u64,
@@ -495,6 +571,20 @@ pub mod fate_games {
         Ok(())
     }
 
+    pub fn close_coinflip(ctx: Context<CloseCoinflip>) -> Result<()> {
+        require!(is_terminal(ctx.accounts.game.state), FateError::GameNotTerminal);
+        require!(
+            vault_available(&ctx.accounts.vault.to_account_info(), CoinflipVault::SPACE)? == 0,
+            FateError::OutstandingLiabilities
+        );
+        emit!(GameAccountsClosed {
+            game: ctx.accounts.game.key(),
+            game_type: GameType::Coinflip,
+            rent_recipient: ctx.accounts.creator.key(),
+        });
+        Ok(())
+    }
+
     pub fn initialize_daily_player(ctx: Context<InitializeDailyPlayer>) -> Result<()> {
         let daily = &mut ctx.accounts.daily;
         daily.player = ctx.accounts.player.key();
@@ -592,6 +682,19 @@ pub mod fate_games {
         Ok(())
     }
 
+    pub fn close_daily_player(ctx: Context<CloseDailyPlayer>) -> Result<()> {
+        require!(
+            ctx.accounts.daily.state != GameState::RandomnessRequested,
+            FateError::InvalidGameState
+        );
+        emit!(GameAccountsClosed {
+            game: ctx.accounts.daily.key(),
+            game_type: GameType::DailyCase,
+            rent_recipient: ctx.accounts.player.key(),
+        });
+        Ok(())
+    }
+
     pub fn initialize_daily_vault(ctx: Context<InitializeDailyVault>) -> Result<()> {
         ctx.accounts.vault.bump = ctx.bumps.vault;
         Ok(())
@@ -615,6 +718,22 @@ pub mod fate_games {
 fn assert_live(config: &Config) -> Result<()> {
     require!(!config.paused, FateError::ProgramPaused);
     Ok(())
+}
+fn clear_pending_config(config: &mut Config) {
+    config.pending_randomness_authority = Pubkey::default();
+    config.pending_treasury = Pubkey::default();
+    config.pending_fee_bps = 0;
+    config.pending_min_wager = 0;
+    config.pending_max_wager = 0;
+    config.pending_config_effective_at = 0;
+}
+fn is_terminal(state: GameState) -> bool {
+    state == GameState::Settled || state == GameState::Refunded
+}
+fn vault_available(vault: &AccountInfo, space: usize) -> Result<u64> {
+    Ok(vault
+        .lamports()
+        .saturating_sub(Rent::get()?.minimum_balance(space)))
 }
 fn assert_wager(config: &Config, amount: u64) -> Result<()> {
     require!(
@@ -707,6 +826,12 @@ pub struct AcceptAdmin<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ApplyConfigUpdate<'info> {
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
 #[instruction(round_id: u64)]
 pub struct CreateJackpot<'info> {
     #[account(mut)]
@@ -770,6 +895,17 @@ pub struct ClaimJackpotRefund<'info> {
     pub round: Account<'info, JackpotRound>,
     #[account(mut, seeds = [JACKPOT_VAULT_SEED, round.key().as_ref()], bump = vault.bump, has_one = round)]
     pub vault: Account<'info, JackpotVault>,
+}
+
+#[derive(Accounts)]
+pub struct CloseJackpot<'info> {
+    #[account(mut, seeds = [JACKPOT_SEED, &round.id.to_le_bytes()], bump = round.bump, close = creator)]
+    pub round: Account<'info, JackpotRound>,
+    #[account(mut, seeds = [JACKPOT_VAULT_SEED, round.key().as_ref()], bump = vault.bump, has_one = round, close = creator)]
+    pub vault: Account<'info, JackpotVault>,
+    /// CHECK: Receives only rent and is constrained to the recorded creator.
+    #[account(mut, address = round.creator)]
+    pub creator: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -841,6 +977,17 @@ pub struct RefundCoinflipTimeout<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CloseCoinflip<'info> {
+    #[account(mut, seeds = [COINFLIP_SEED, &game.id.to_le_bytes()], bump = game.bump, close = creator)]
+    pub game: Account<'info, CoinflipGame>,
+    #[account(mut, seeds = [COINFLIP_VAULT_SEED, game.key().as_ref()], bump = vault.bump, has_one = game, close = creator)]
+    pub vault: Account<'info, CoinflipVault>,
+    /// CHECK: Receives only rent and is constrained to the recorded creator.
+    #[account(mut, address = game.creator)]
+    pub creator: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
 pub struct InitializeDailyPlayer<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
@@ -880,6 +1027,14 @@ pub struct CancelDailyTimeout<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CloseDailyPlayer<'info> {
+    #[account(mut)]
+    pub player: Signer<'info>,
+    #[account(mut, seeds = [DAILY_SEED, player.key().as_ref()], bump = daily.bump, has_one = player, close = player)]
+    pub daily: Account<'info, DailyPlayer>,
+}
+
+#[derive(Accounts)]
 pub struct InitializeDailyVault<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -905,14 +1060,20 @@ pub struct Config {
     pub pending_admin: Pubkey,
     pub randomness_authority: Pubkey,
     pub treasury: Pubkey,
+    pub pending_randomness_authority: Pubkey,
+    pub pending_treasury: Pubkey,
     pub fee_bps: u16,
+    pub pending_fee_bps: u16,
     pub min_wager: u64,
     pub max_wager: u64,
+    pub pending_min_wager: u64,
+    pub pending_max_wager: u64,
+    pub pending_config_effective_at: i64,
     pub paused: bool,
     pub bump: u8,
 }
 impl Config {
-    pub const SPACE: usize = 8 + 32 * 4 + 2 + 8 + 8 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 * 6 + 2 + 2 + 8 * 5 + 1 + 1;
 }
 
 #[account]
@@ -1054,6 +1215,20 @@ pub struct ConfigUpdated {
     pub max_wager: u64,
 }
 #[event]
+pub struct ConfigUpdateProposed {
+    pub admin: Pubkey,
+    pub randomness_authority: Pubkey,
+    pub treasury: Pubkey,
+    pub fee_bps: u16,
+    pub min_wager: u64,
+    pub max_wager: u64,
+    pub effective_at: i64,
+}
+#[event]
+pub struct ConfigUpdateCancelled {
+    pub admin: Pubkey,
+}
+#[event]
 pub struct JackpotCreated {
     pub round: Pubkey,
     pub round_id: u64,
@@ -1115,6 +1290,12 @@ pub struct DailyCaseTimedOut {
     pub account: Pubkey,
     pub player: Pubkey,
 }
+#[event]
+pub struct GameAccountsClosed {
+    pub game: Pubkey,
+    pub game_type: GameType,
+    pub rent_recipient: Pubkey,
+}
 
 #[error_code]
 pub enum FateError {
@@ -1172,6 +1353,14 @@ pub enum FateError {
     RefundAlreadyClaimed,
     #[msg("This wallet has no refundable jackpot entries.")]
     NoRefundAvailable,
+    #[msg("No configuration update is pending.")]
+    NoPendingConfigUpdate,
+    #[msg("The configuration update timelock is still active.")]
+    ConfigTimelockActive,
+    #[msg("The game has not reached a terminal state.")]
+    GameNotTerminal,
+    #[msg("The game or vault still has outstanding liabilities.")]
+    OutstandingLiabilities,
 }
 
 #[cfg(test)]
@@ -1242,5 +1431,13 @@ mod tests {
                 weighted_winner(&entries, 6, &randomness).unwrap() == entry.player
             }));
         }
+    }
+
+    #[test]
+    fn only_settled_and_refunded_games_are_terminal() {
+        assert!(!is_terminal(GameState::Open));
+        assert!(!is_terminal(GameState::RandomnessRequested));
+        assert!(is_terminal(GameState::Settled));
+        assert!(is_terminal(GameState::Refunded));
     }
 }

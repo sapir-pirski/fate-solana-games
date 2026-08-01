@@ -15,7 +15,29 @@ for Jackpot, Coinflip, and Daily Case.
 - Timed-out Jackpot and Coinflip games have permissionless refund paths.
 - Timed-out Daily Case requests can be cleared by the player.
 - Administration uses a two-step authority transfer and emits configuration events.
+- Treasury, randomness authority, fees, and wager limits use a 24-hour
+  propose/apply timelock; the administrator can cancel a pending update.
 - Pausing prevents new wagers and opens while preserving settlement/refund paths.
+- Terminal games can be closed only after their vault has no remaining spendable
+  lamports. Refunded jackpots additionally require every recorded entry to have
+  claimed its refund.
+- Players can close idle or completed Daily Case accounts, but never a request
+  awaiting randomness.
+
+## Fund lifecycle
+
+Each paid game has a program-derived vault. Transfers into a vault occur only when
+the corresponding state transition succeeds. Settlement pays the configured fee
+to the recorded treasury and the remainder to the verified winner. If randomness
+is not delivered before the timeout, users recover their original wagers through
+permissionless refund state transitions. Rent-bearing game and vault accounts can
+then be reclaimed only when the game is terminal and no spendable balance or
+refund liability remains.
+
+Configuration changes do not take effect immediately. An administrator proposes
+the complete replacement configuration, waits `CONFIG_TIMELOCK_SECONDS`, and then
+any caller may apply it. New proposals replace older pending proposals and every
+proposal, application, or cancellation emits an on-chain event.
 
 ## Randomness boundary
 

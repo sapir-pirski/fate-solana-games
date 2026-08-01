@@ -34,3 +34,23 @@ test("development randomness is explicitly forbidden for mainnet", () => {
   assert.match(programReadme, /not production VRF/i);
   assert.match(programReadme, /Do not enable mainnet wagers/i);
 });
+
+test("economic configuration changes are delayed and observable", () => {
+  assert.match(source, /CONFIG_TIMELOCK_SECONDS: i64 = 86_400/);
+  assert.match(source, /pub fn propose_config_update/);
+  assert.match(source, /pub fn apply_config_update/);
+  assert.match(source, /pub fn cancel_config_update/);
+  assert.match(source, /ConfigTimelockActive/);
+  assert.match(source, /ConfigUpdateProposed/);
+  assert.match(source, /ConfigUpdateCancelled/);
+});
+
+test("accounts close only after games are terminal and liabilities are cleared", () => {
+  assert.match(source, /pub fn close_jackpot/);
+  assert.match(source, /pub fn close_coinflip/);
+  assert.match(source, /pub fn close_daily_player/);
+  assert.match(source, /GameNotTerminal/);
+  assert.match(source, /OutstandingLiabilities/);
+  assert.match(source, /vault_available/);
+  assert.match(programReadme, /no spendable balance or\s+refund liability remains/i);
+});
