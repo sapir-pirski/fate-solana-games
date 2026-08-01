@@ -7,10 +7,11 @@ Target project: `project-e00sv4bvpr00wr5e5kr9xr` (`tlv-pe-hw2`, `eu-north1`).
 - Container Registry: `registry-e00zey749styjjkd0g` (`fate-platform`)
 - KMS key: `kmssymkey-e00bvmk550v2pwnfgw` (`fate-platform-data-key`, AES-256, 90-day rotation)
 - Object Storage: `fate-platform-backups-e00sv4bv` (versioning enabled)
-- Kubernetes CPU node group: `mk8snodegroup-e00n1stcmsef1ccq6w` (`fate-cpu-ng`, 1 x 2 vCPU/8 GiB)
+- Kubernetes CPU node group: `mk8snodegroup-e00n1stcmsef1ccq6w` (`fate-cpu-ng`, 2 x 2 vCPU/8 GiB)
 - Managed PostgreSQL: `postgresql-e00rdx7hqp2jy2kdrz` (`fate-postgres`, PostgreSQL 16)
 - SecretStash: `mbsec-e00vv1b2pb79qj7t72` (`fate-platform-secrets`)
 - Observability: `nebius-observability-agent` Helm release in namespace `observability`
+- Availability: two web replicas spread across the two dedicated CPU nodes, with a PodDisruptionBudget
 - Current CPU runtime: `oref-app` VM, isolated `fate-platform` container
 - HTTPS endpoint: `https://fate.89-169-122-60.sslip.io`
 
