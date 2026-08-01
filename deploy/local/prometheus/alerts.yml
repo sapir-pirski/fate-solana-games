@@ -13,6 +13,24 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: FATE local PostgreSQL exporter is unavailable
+      - alert: FateIndexerDown
+        expr: up{job="fate-indexer"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: FATE Solana indexer is unavailable
+      - alert: FateIndexerFinalizedLag
+        expr: fate_indexer_finalized_lag > 500
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: FATE Solana indexer is more than 500 finalized slots behind
+      - alert: FateIndexerDeadLetters
+        expr: fate_indexer_dead_letters > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: FATE Solana indexer has unresolved dead-letter records
       - alert: FateRedisExporterDown
         expr: up{job="redis"} == 0
         for: 2m

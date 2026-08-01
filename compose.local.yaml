@@ -57,6 +57,38 @@ services:
     labels:
       fate.local.component: postgres
 
+  indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fate-platform:local
+    restart: unless-stopped
+    command: [node_modules/.bin/tsx, indexer/cli.ts, run]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
+      SOLANA_CLUSTER: ${SOLANA_CLUSTER:-devnet}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.devnet.solana.com}
+      SOLANA_GENESIS_HASH: ${SOLANA_GENESIS_HASH:-}
+      FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
+      INDEXER_POLL_MS: ${INDEXER_POLL_MS:-15000}
+      INDEXER_MAX_BACKFILL_PAGES: ${INDEXER_MAX_BACKFILL_PAGES:-100}
+      INDEXER_HEALTH_PORT: "9464"
+    ports:
+      - 127.0.0.1:${INDEXER_HEALTH_PORT:-9464}:9464
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [frontend, backend, observability]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:9464/health').then(r=>{if(r.status!==200&&r.status!==503)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+    labels:
+      fate.local.component: indexer
+
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped

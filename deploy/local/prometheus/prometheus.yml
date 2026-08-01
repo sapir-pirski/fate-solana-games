@@ -13,6 +13,10 @@ scrape_configs:
     metrics_path: /api/metrics
     static_configs:
       - targets: ["app:3000"]
+  - job_name: fate-indexer
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["indexer:9464"]
   - job_name: redis
     static_configs:
       - targets: ["redis-exporter:9121"]
