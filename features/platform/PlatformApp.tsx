@@ -35,9 +35,9 @@ import { createCoinflipTransaction, enterJackpotTransaction, solToLamports } fro
 import { getPublicConfig, requireFateProgramId } from "@/lib/config/client";
 import { AnimatedNumber, Mark, SolIcon, Stat } from "@/components/ui/GamePrimitives";
 import { jackpotChance } from "@/features/jackpot/model";
-import type { CoinSide } from "@/features/coinflip/model";
 
 type View = "jackpot" | "coinflip" | "daily" | "history";
+type CoinSide = "Heads" | "Tails";
 type Toast = { title: string; text: string } | null;
 type WalletOption = { name: string; icon: string };
 type WalletClient = ReturnType<typeof useSolanaWallet>;

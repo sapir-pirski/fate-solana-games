@@ -10,7 +10,6 @@ FATE is split by responsibility so custody and game rules cannot accidentally le
 - `components/three/` contains reusable WebGL infrastructure and scenes.
 - `lib/` contains environment-neutral clients, contracts, validation and utilities.
 - `server/services/` is the application-service boundary used by API handlers.
-- `server/repositories/` defines persistence contracts; database adapters remain replaceable.
 - `db/` owns the canonical Drizzle schema and the sole D1 connection.
 - `indexer/` contains environment-neutral Solana decoding, RPC failover and retry utilities used by D1-backed application workflows.
 - `programs/` owns Anchor programs and on-chain custody rules.
