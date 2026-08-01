@@ -1,0 +1,30 @@
+controller:
+  replicaCount: 2
+  nodeSelector:
+    workload: fate
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: fate
+      effect: NoSchedule
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: controller
+                app.kubernetes.io/instance: fate-ingress
+                app.kubernetes.io/name: ingress-nginx
+  service:
+    externalTrafficPolicy: Local
+  config:
+    force-ssl-redirect: "true"
+    ssl-redirect: "true"
+    server-tokens: "false"
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false

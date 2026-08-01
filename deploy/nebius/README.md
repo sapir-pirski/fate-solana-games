@@ -13,7 +13,7 @@ Target project: `project-e00sv4bvpr00wr5e5kr9xr` (`tlv-pe-hw2`, `eu-north1`).
 - Observability: `nebius-observability-agent` Helm release in namespace `observability`
 - Availability: two web replicas spread across the two dedicated CPU nodes, with a PodDisruptionBudget
 - Current CPU runtime: `oref-app` VM, isolated `fate-platform` container
-- HTTPS endpoint: `https://fate.89-169-122-60.sslip.io`
+- Transitional HTTPS endpoint: `https://fate.89-169-122-60.sslip.io`
 
 The project Kubernetes cluster `mk8scluster-e00bj563eq2858w1qr` also contains
 shared H100 GPU workers. FATE workloads select and tolerate only the dedicated
@@ -24,7 +24,13 @@ Cloudflare deployments remain compatible with the D1 binding.
 Nebius image URLs use the registry resource ID without its `registry-` prefix,
 for example `cr.eu-north1.nebius.cloud/e00zey749styjjkd0g/fate-platform:<tag>`.
 
-This package deploys the current devnet engineering build to Managed Kubernetes with a private secret, persistent application state, health checks, resource limits, a public load balancer, and a non-signing operations audit job. The application remains single-replica while its D1-compatible local state is in use. Move persistence to Managed PostgreSQL before increasing replicas.
+This package deploys the current devnet engineering build to Managed Kubernetes
+with a private Kubernetes Secret, Managed PostgreSQL, health checks, resource
+limits, two application replicas, a public load balancer, and a non-signing
+operations audit job. `scripts/deploy-nebius-ingress.sh` adds a separate,
+Kubernetes-native HTTPS ingress without disrupting the transitional VM Caddy
+endpoint. See `OPERATIONS.md` for backup, alerting, secret rotation, and rollback
+procedures.
 
 Required operator inputs are deliberately not committed: `OPENAI_API_KEY`, a random `INDEXER_AUTH_TOKEN`, and the audited devnet program ID. Copy `secret.example.yaml` to an ignored `secret.yaml`, replace every placeholder, and run `./scripts/deploy-nebius.sh` after the Nebius resources and kubeconfig exist.
 
