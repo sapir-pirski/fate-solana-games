@@ -24,7 +24,9 @@ spec:
           containers:
             - name: audit
               image: curlimages/curl:8.12.1
-              args: ["-fsS", "-X", "POST", "http://fate-web/api/ai/ops", "-H", "Authorization: Bearer $(INDEXER_AUTH_TOKEN)"]
+              command: ["/bin/sh", "-c"]
+              args:
+                - 'exec curl -fsS -X POST http://fate-web/api/ai/ops -H "Authorization: Bearer ${INDEXER_AUTH_TOKEN}"'
               env:
                 - name: INDEXER_AUTH_TOKEN
                   valueFrom:
