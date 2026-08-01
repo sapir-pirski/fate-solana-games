@@ -1,43 +1,167 @@
 {
   "annotations": { "list": [] },
   "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Open logs in Explore", "type": "link", "url": "/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bstack=%5C%22fate-local%5C%22%7D%22%7D%5D%7D", "targetBlank": false }
+  ],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
       "id": 1,
-      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "fate_up", "refId": "A" }],
-      "title": "FATE application",
-      "type": "stat"
-    },
-    {
+      "type": "stat",
+      "title": "Availability",
+      "description": "Average scrape availability across the selected services and dashboard time range.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
-      "id": 2,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
-      "targets": [{ "expr": "up{job=~\"fate-app|postgres|fate-indexer\"}", "legendFormat": "{{job}}", "refId": "A" }],
-      "title": "Service availability",
-      "type": "timeseries"
+      "targets": [{ "expr": "avg(avg_over_time(up{job=~\"$service\"}[$__range])) * 100", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "min": 0, "max": 100, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 95 }, { "color": "green", "value": 99.5 }] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
+      "id": 2,
+      "type": "stat",
+      "title": "Active incidents",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
+    },
+    {
       "id": 3,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{stack=\"fate-local\"}", "refId": "A" }],
-      "title": "Local container logs",
-      "type": "logs"
+      "type": "stat",
+      "title": "Error rate",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(fate_errors_total[$__rate_interval])) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.05 }, { "color": "red", "value": 0.2 }] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "P95 request latency",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(fate_span_duration_ms_bucket[$__rate_interval])))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 500 }, { "color": "red", "value": 1500 }] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
+    },
+    {
+      "id": 5,
+      "type": "status-history",
+      "title": "Service status history",
+      "description": "Green is available, red is unavailable and grey is missing telemetry.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "up{job=~\"$service\"}", "legendFormat": "{{job}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 85, "lineWidth": 0 }, "mappings": [{ "type": "value", "options": { "0": { "color": "red", "text": "Down" }, "1": { "color": "green", "text": "Available" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "options": { "colWidth": 0.9, "legend": { "displayMode": "hidden", "placement": "bottom", "showLegend": false }, "rowHeight": 0.8, "showValue": "auto", "tooltip": { "mode": "single", "sort": "none" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Request throughput and errors",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(fate_span_duration_ms_count[$__rate_interval]))", "legendFormat": "requests/s", "refId": "A" },
+        { "expr": "sum(rate(fate_errors_total[$__rate_interval]))", "legendFormat": "errors/s", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": { "group": "A", "mode": "none" } } }, "overrides": [{ "matcher": { "id": "byName", "options": "errors/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }] },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Latency percentiles",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(fate_span_duration_ms_bucket[$__rate_interval])))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(fate_span_duration_ms_bucket[$__rate_interval])))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(fate_span_duration_ms_bucket[$__rate_interval])))", "legendFormat": "P99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": { "group": "A", "mode": "none" } } }, "overrides": [] },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Transaction operations by state",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "fate_transaction_operations", "legendFormat": "{{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
+      "options": { "barRadius": 0, "barWidth": 0.8, "fullHighlight": false, "groupWidth": 0.7, "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "orientation": "auto", "showValue": "auto", "stacking": "normal", "tooltip": { "mode": "multi", "sort": "desc" }, "xTickLabelRotation": 0, "xTickLabelSpacing": 0 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Indexer lag and RPC latency",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "fate_indexer_finalized_lag", "legendFormat": "finalized slot lag", "refId": "A" },
+        { "expr": "fate_solana_rpc_latency_ms", "legendFormat": "RPC latency", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byName", "options": "RPC latency" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Database and queue health",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "up{job=\"postgres\"}", "legendFormat": "PostgreSQL", "refId": "A" },
+        { "expr": "fate:queue_pending:count", "legendFormat": "Pending jobs", "refId": "B" },
+        { "expr": "fate:indexer_lag:max", "legendFormat": "Indexer lag", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Log volume by level",
+      "description": "Click a series to isolate a level, then inspect matching entries below.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 26 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "expr": "sum by (level) (count_over_time({stack=\"fate-local\", service=~\"$service\"} | json | level=~\"$level\" | component=~\"$component\" | gameType=~\"$game\" | traceId=~\"$trace\" |~ \"$search\" [$__auto]))", "legendFormat": "{{level}}", "queryType": "range", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "logs", "custom": { "drawStyle": "bars", "fillOpacity": 72, "lineWidth": 1, "showPoints": "never", "stacking": { "group": "A", "mode": "normal" } } }, "overrides": [{ "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }, { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }, { "matcher": { "id": "byName", "options": "info" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }] },
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "Filtered FATE application logs",
+      "description": "Structured application logs only. Expand an entry for fields, context and trace navigation.",
+      "gridPos": { "h": 15, "w": 24, "x": 0, "y": 33 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "expr": "{stack=\"fate-local\", service=~\"$service\"} | json | level=~\"$level\" | component=~\"$component\" | gameType=~\"$game\" | traceId=~\"$trace\" |~ \"$search\"", "queryType": "range", "refId": "A" }],
+      "options": { "dedupStrategy": "exact", "enableInfiniteScrolling": false, "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": false }
     }
   ],
-  "refresh": "10s",
+  "refresh": "15s",
   "schemaVersion": 41,
-  "tags": ["fate", "local"],
-  "templating": { "list": [] },
+  "tags": ["fate", "local", "operations", "logs"],
+  "templating": {
+    "list": [
+      { "name": "service", "label": "Service", "type": "custom", "query": "All : .*, FATE app : fate-app|app, Indexer : fate-indexer|indexer, Worker : fate-coordination|coordination-worker, PostgreSQL : postgres|postgres-exporter", "current": { "selected": true, "text": "All", "value": ".*" }, "hide": 0, "includeAll": false, "multi": false, "options": [] },
+      { "name": "level", "label": "Log level", "type": "custom", "query": "error,warn,info,debug", "current": { "selected": true, "text": ["error", "warn", "info"], "value": ["error", "warn", "info"] }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
+      { "name": "component", "label": "Component", "type": "custom", "query": "api,indexer,coordination,wallet,ai,unknown", "current": { "selected": true, "text": "All", "value": "$__all" }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
+      { "name": "game", "label": "Game", "type": "custom", "query": "jackpot,coinflip,daily_case,history,unknown", "current": { "selected": true, "text": "All", "value": "$__all" }, "hide": 0, "includeAll": true, "allValue": ".*", "multi": true, "options": [] },
+      { "name": "search", "label": "Message contains", "type": "textbox", "query": "", "current": { "selected": true, "text": "", "value": "" }, "hide": 0 },
+      { "name": "trace", "label": "Trace ID", "type": "textbox", "query": ".*", "current": { "selected": true, "text": ".*", "value": ".*" }, "hide": 0 }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "FATE local platform",
+  "timepicker": { "refresh_intervals": ["5s", "10s", "15s", "30s", "1m", "5m"], "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"] },
+  "timezone": "browser",
+  "title": "FATE platform health and logs",
   "uid": "fate-local",
-  "version": 1
+  "version": 2
 }

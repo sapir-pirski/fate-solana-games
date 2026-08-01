@@ -13,6 +13,13 @@ datasources:
     access: proxy
     url: http://loki:3100
     editable: false
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"traceId":"([a-fA-F0-9]{32})"'
+          datasourceUid: tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: View trace
   - name: Tempo
     uid: tempo
     type: tempo
@@ -24,3 +31,7 @@ datasources:
         datasourceUid: loki
         spanStartTimeShift: -5m
         spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: '{stack="fate-local"} | json | traceId="$${__trace.traceId}"'
