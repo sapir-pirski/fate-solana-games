@@ -30,11 +30,14 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { logEvent, startLogging } from "./logging-client";
 import { useSolanaWallet } from "./solana/useWallet";
+import { useGames } from "./solana/useGames";
+import { createCoinflipTransaction, enterJackpotTransaction, solToLamports } from "../lib/solana/fate-client";
 import FateCopilot from "./ai/FateCopilot";
 
 type View = "jackpot" | "coinflip" | "daily" | "history";
 type Toast = { title: string; text: string } | null;
 type WalletOption = { name: string; icon: string };
+type WalletClient = ReturnType<typeof useSolanaWallet>;
 
 const GameCoin3D = lazy(() => import("./animations/GameCoin3D"));
 const DailyCase3D = lazy(() => import("./animations/DailyCase3D"));
@@ -45,26 +48,8 @@ function useHydrated() {
   return useSyncExternalStore(subscribeHydration, () => true, () => false);
 }
 
-const entrants = [
-  { wallet: "7cXq...2Kp9", amount: 3.42, color: "#c8ff4d", ago: "just now" },
-  { wallet: "F4te...91sL", amount: 1.8, color: "#8b5cf6", ago: "8s ago" },
-  { wallet: "9zUa...Cq31", amount: 0.75, color: "#ff6bd6", ago: "19s ago" },
-  { wallet: "Hh2m...8VxA", amount: 0.52, color: "#53e7ff", ago: "31s ago" },
-];
-
-const flips = [
-  { id: "#8492", wallet: "AK7d...mP21", amount: 2.5, side: "Heads", age: "12s" },
-  { id: "#8491", wallet: "5Krx...nF04", amount: 1.0, side: "Tails", age: "34s" },
-  { id: "#8488", wallet: "pL91...7aZx", amount: 0.5, side: "Heads", age: "1m" },
-];
-
-const historyRows = [
-  { game: "Jackpot", id: "#1,294", result: "Won", amount: "+12.84", date: "2 min ago", win: true },
-  { game: "Coinflip", id: "#8,467", result: "Lost", amount: "−1.00", date: "18 min ago", win: false },
-  { game: "Daily Case", id: "#31,082", result: "Claimed", amount: "+0.05", date: "Yesterday", win: true },
-  { game: "Coinflip", id: "#8,401", result: "Won", amount: "+3.84", date: "Yesterday", win: true },
-  { game: "Jackpot", id: "#1,287", result: "Lost", amount: "−0.50", date: "2 days ago", win: false },
-];
+const short = (address: string | null) => address ? `${address.slice(0,4)}...${address.slice(-4)}` : "—";
+const sol = (lamports: string) => Number(lamports) / 1_000_000_000;
 
 function Mark({ small = false }: { small?: boolean }) {
   return <div className={`mark ${small ? "mark-small" : ""}`}><span>F</span></div>;
@@ -139,49 +124,56 @@ function Fairness({ hash = "A7f3...9c2B" }: { hash?: string }) {
   </div>;
 }
 
-function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConnect: () => void; notify: (t: Toast) => void }) {
+function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnect: () => void; notify: (t: Toast) => void }) {
+  const connected = wallet.connected;
+  const { games, loading, error, refresh } = useGames("jackpot", "open");
+  const round = games[0];
   const [amount, setAmount] = useState("0.50");
+  const [submitting, setSubmitting] = useState(false);
   const [seconds, setSeconds] = useState(18);
   useEffect(() => { const timer = setInterval(() => setSeconds(s => s > 0 ? s - 1 : 30), 1000); return () => clearInterval(timer); }, []);
-  const chance = Math.min(100, ((Number(amount) || 0) / (8.49 + (Number(amount) || 0))) * 100);
-  const enter = () => {
+  const pot = round ? sol(round.pot_lamports) : 0;
+  const chance = Math.min(100, ((Number(amount) || 0) / (pot + (Number(amount) || 0))) * 100);
+  const enter = async () => {
     if (!connected) return onConnect();
-    if (!Number(amount)) return notify({ title: "Enter an amount", text: "Choose how much SOL you want to add." });
+    if (!round) return notify({ title: "No open round", text: "Wait for a finalized jackpot round to appear in the indexer." });
     if (!PROGRAM_CONFIGURED) return notify({ title: "Devnet setup required", text: "The audited program address has not been configured, so no funds were requested." });
-    notify({ title: "Entry ready", text: `${amount} SOL transaction prepared for your wallet.` });
+    try {
+      setSubmitting(true);
+      const transaction = enterJackpotTransaction({programId:process.env.NEXT_PUBLIC_FATE_PROGRAM_ID!,player:wallet.address!,roundId:BigInt(round.numeric_id),amountLamports:solToLamports(amount)});
+      const signature = await wallet.sendTransaction(transaction, status => notify({title:status === "awaiting_approval" ? "Approve in wallet" : `Transaction ${status}`,text:status === "finalized" ? "Your entry is finalized on Solana." : "Waiting for Solana confirmation…"}));
+      logEvent({eventType:"jackpot_entry_finalized",category:"transaction",gameType:"jackpot",status:"success",walletAddress:wallet.address!,metadata:{signature,round:round.numeric_id}});
+      await refresh();
+    } catch (cause) { notify({title:"Entry failed",text:cause instanceof Error?cause.message:"The transaction could not be submitted."}); }
+    finally { setSubmitting(false); }
   };
   return <motion.main key="jackpot" className="page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><ParticleField />
     <section className="jackpot-hero">
-      <div className="eyebrow"><span className="pulse" /> LIVE ROUND <span>#1,295</span></div>
+      <div className="eyebrow"><span className="pulse" /> FINALIZED INDEX <span>{round ? `#${round.numeric_id}` : "NO OPEN ROUND"}</span></div>
       <h1>One pot.<br/><em>One winner.</em></h1>
       <p className="hero-sub">Every entry raises your odds. Winner takes the pot — provably, transparently, on-chain.</p>
       <div className="hero-stats">
-        <Stat icon={<Coins size={20} />} label="Total pot" value="8.49 SOL" accent />
-        <Stat icon={<Users size={20} />} label="Players" value="12" />
+        <Stat icon={<Coins size={20} />} label="Total pot" value={`${pot.toFixed(2)} SOL`} accent />
+        <Stat icon={<Users size={20} />} label="Feed" value={loading ? "Loading" : error ? "Offline" : "Finalized"} />
         <Stat icon={<Clock3 size={20} />} label="Drawing in" value={`00:${String(seconds).padStart(2, "0")}`} />
       </div>
     </section>
 
     <section className="jackpot-grid">
       <div className="card pot-card">
-        <div className="card-head"><div><span className="kicker">CURRENT POT</span><h2><SolIcon /> <AnimatedNumber value={8.49}/> <small>SOL</small></h2></div><div className="chance-ring" style={{ "--chance": `${chance * 3.6}deg` } as React.CSSProperties}><div><strong>{chance.toFixed(1)}%</strong><span>YOUR CHANCE</span></div></div></div>
-        <div className="pot-line">{entrants.map((e, i) => <span key={e.wallet} style={{ width: `${[40, 27, 19, 14][i]}%`, background: e.color }} />)}</div>
-        <div className="entry-label"><span>Your entry</span><span>Available: {connected ? "24.82" : "—"} SOL</span></div>
+        <div className="card-head"><div><span className="kicker">CURRENT POT</span><h2><SolIcon /> <AnimatedNumber value={pot}/> <small>SOL</small></h2></div><div className="chance-ring" style={{ "--chance": `${chance * 3.6}deg` } as React.CSSProperties}><div><strong>{chance.toFixed(1)}%</strong><span>YOUR CHANCE</span></div></div></div>
+        <div className="pot-line"><span style={{width:"100%",background:"#c8ff4d"}} /></div>
+        <div className="entry-label"><span>Your entry</span><span>Available: {connected && wallet.balance !== null ? wallet.balance.toFixed(3) : "—"} SOL</span></div>
         <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Entry amount"/><span>SOL</span><button onClick={() => setAmount(connected ? "24.82" : "1.00")}>MAX</button></div>
         <div className="presets">{["0.10", "0.25", "0.50", "1.00"].map(v => <button className={amount === v ? "selected" : ""} key={v} onClick={() => setAmount(v)}>{v}</button>)}</div>
-        <button className="primary" onClick={enter}>{connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
+        <button className="primary" disabled={submitting || !round} onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
         <div className="fee-note"><ShieldCheck size={14} /> Secured by Solana <span>•</span> 3% winner fee</div>
       </div>
 
       <div className="card live-card">
-        <div className="card-title"><div><Flame size={18} /><strong>Live entries</strong></div><span className="demo-state">DEMO DATA</span></div>
-        <div className="entries">
-          {entrants.map((e, i) => <motion.div className="entry" key={e.wallet} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * .08 }}>
-            <div className="avatar" style={{ "--avatar": e.color } as React.CSSProperties}>{e.wallet[0]}</div>
-            <div><strong>{e.wallet}</strong><span>{e.ago}</span></div><b><SolIcon /> {e.amount.toFixed(2)}</b>
-          </motion.div>)}
-        </div>
-        <div className="whale"><Crown size={17} /><span>Top entry</span><strong>7cXq...2Kp9</strong><b>40.3%</b></div>
+        <div className="card-title"><div><Flame size={18} /><strong>On-chain round</strong></div><span className="demo-state">FINALIZED</span></div>
+        <div className="entries"><div className="entry"><div className="avatar">◎</div><div><strong>{round ? short(round.address) : "No round indexed"}</strong><span>{error ?? (round ? `Slot ${round.last_slot}` : "Waiting for an open round")}</span></div>{round&&<b><SolIcon/> {pot.toFixed(2)}</b>}</div></div>
+        {round&&<div className="whale"><Crown size={17}/><span>Program account</span><strong>{short(round.address)}</strong><b>OPEN</b></div>}
       </div>
     </section>
 
@@ -192,34 +184,38 @@ function Jackpot({ connected, onConnect, notify }: { connected: boolean; onConne
   </motion.main>;
 }
 
-function Coinflip({ connected, onConnect, notify }: { connected: boolean; onConnect: () => void; notify: (t: Toast) => void }) {
+function Coinflip({ wallet, onConnect, notify }: { wallet: WalletClient; onConnect: () => void; notify: (t: Toast) => void }) {
+  const connected=wallet.connected; const {games:flips,refresh}=useGames("coinflip","open");
   const [side, setSide] = useState<"Heads" | "Tails">("Heads");
   const [amount, setAmount] = useState("1.00");
   const webglReady = useHydrated();
   const reduceMotion = useReducedMotion();
-  const action = (text: string) => connected ? notify(PROGRAM_CONFIGURED ? { title: text, text: "Transaction prepared for wallet approval." } : { title: "Devnet setup required", text: "The program address is not configured, so no funds were requested." }) : onConnect();
+  const [submitting,setSubmitting]=useState(false);
+  const create = async()=>{if(!connected)return onConnect();if(!PROGRAM_CONFIGURED)return notify({title:"Devnet setup required",text:"The program address is not configured."});try{setSubmitting(true);const bytes=crypto.getRandomValues(new Uint32Array(2));const gameId=(BigInt(bytes[0])<<32n)|BigInt(bytes[1]);const tx=createCoinflipTransaction({programId:process.env.NEXT_PUBLIC_FATE_PROGRAM_ID!,creator:wallet.address!,gameId,side,amountLamports:solToLamports(amount),expiresAt:BigInt(Math.floor(Date.now()/1000)+300)});const signature=await wallet.sendTransaction(tx,status=>notify({title:status==="awaiting_approval"?"Approve flip":"Flip transaction "+status,text:"Waiting for finalized Solana state…"}));logEvent({eventType:"coinflip_created",category:"transaction",gameType:"coinflip",status:"success",walletAddress:wallet.address!,metadata:{signature,gameId:gameId.toString()}});await refresh();}catch(cause){notify({title:"Create failed",text:cause instanceof Error?cause.message:"Transaction failed."});}finally{setSubmitting(false)}};
   return <motion.main key="coinflip" className="page subpage" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
     <div className="page-heading"><div><div className="eyebrow"><Swords size={14}/> PLAYER VS PLAYER</div><h1>Call it.<br/><em>Double it.</em></h1><p>Pick a side, set the stakes, and challenge another player. One flip. Winner takes all.</p></div><div className="big-coin">{reduceMotion||!webglReady?<div className={side === "Heads" ? "coin-face heads" : "coin-face tails"}><Mark small /></div>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><GameCoin3D side={side}/></Suspense>}<span className="orbit one"/><span className="orbit two"/></div></div>
     <div className="coin-grid">
-      <div className="card create-card"><div className="card-title"><div><Sparkles size={18}/><strong>Create a flip</strong></div><span>1v1</span></div><label>Choose your side</label><div className="side-picker"><button className={side === "Heads" ? "active" : ""} onClick={() => setSide("Heads")}><div className="mini-coin">F</div><strong>Heads</strong><span>Violet side</span></button><button className={side === "Tails" ? "active tails" : ""} onClick={() => setSide("Tails")}><div className="mini-coin lime">◎</div><strong>Tails</strong><span>Lime side</span></button></div><label>Wager amount</label><div className="amount-input"><SolIcon/><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}/><span>SOL</span></div><div className="presets">{["0.25","0.50","1.00","2.50"].map(v=><button key={v} className={amount===v?"selected":""} onClick={()=>setAmount(v)}>{v}</button>)}</div><button className="primary" onClick={()=>action("Coinflip created")}>{connected ? <><Swords size={18}/> Create {side.toLowerCase()} flip · {amount} SOL</> : <><Wallet size={18}/> Connect wallet to play</>}</button></div>
-      <div className="card active-flips"><div className="card-title"><div><Flame size={18}/><strong>Open challenges</strong></div><span className="demo-state">DEMO DATA</span></div>{flips.map((f,i)=><motion.div className="flip-row" key={f.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.08}}><div className={`mini-coin ${f.side === "Tails" ? "lime":""}`}>{f.side === "Heads" ? "F":"◎"}</div><div><strong>{f.wallet}</strong><span>{f.id} · {f.age} ago</span></div><b><SolIcon/> {f.amount.toFixed(2)}</b><button onClick={()=>action(`Joining ${f.id}`)}>Join</button></motion.div>)}<div className="active-footer"><ShieldCheck size={15}/> Funds escrowed on-chain until the flip settles</div></div>
+      <div className="card create-card"><div className="card-title"><div><Sparkles size={18}/><strong>Create a flip</strong></div><span>1v1</span></div><label>Choose your side</label><div className="side-picker"><button className={side === "Heads" ? "active" : ""} onClick={() => setSide("Heads")}><div className="mini-coin">F</div><strong>Heads</strong><span>Violet side</span></button><button className={side === "Tails" ? "active tails" : ""} onClick={() => setSide("Tails")}><div className="mini-coin lime">◎</div><strong>Tails</strong><span>Lime side</span></button></div><label>Wager amount</label><div className="amount-input"><SolIcon/><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}/><span>SOL</span></div><div className="presets">{["0.25","0.50","1.00","2.50"].map(v=><button key={v} className={amount===v?"selected":""} onClick={()=>setAmount(v)}>{v}</button>)}</div><button className="primary" disabled={submitting} onClick={()=>void create()}>{submitting?<><LoaderCircle className="spin" size={18}/> Confirming…</>:connected ? <><Swords size={18}/> Create {side.toLowerCase()} flip · {amount} SOL</> : <><Wallet size={18}/> Connect wallet to play</>}</button></div>
+      <div className="card active-flips"><div className="card-title"><div><Flame size={18}/><strong>Open challenges</strong></div><span className="demo-state">FINALIZED</span></div>{flips.map((f,i)=><motion.div className="flip-row" key={f.address} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.08}}><div className="mini-coin">F</div><div><strong>{short(f.creator)}</strong><span>#{f.numeric_id} · slot {f.last_slot}</span></div><b><SolIcon/> {sol(f.wager_lamports).toFixed(2)}</b><button disabled title="Joining needs a committed Switchboard randomness account">Oracle required</button></motion.div>)}{!flips.length&&<div className="entry"><span>No finalized open challenges.</span></div>}<div className="active-footer"><ShieldCheck size={15}/> Funds escrowed on-chain until the flip settles</div></div>
     </div>
     <section className="bottom-grid"><Fairness hash="Cf92...D81e"/><div className="card recent-results"><div className="card-title"><div><History size={18}/><strong>Recent flips</strong></div><button className="text-link">View all</button></div><div className="result-row"><span className="win-tag">W</span><strong>3Qm8...pL0f</strong><span>beat</span><strong>Bm72...3kAi</strong><b>+4.85 SOL</b></div><div className="result-row"><span className="loss-tag">L</span><strong>9cV1...Sa2z</strong><span>lost to</span><strong>Rr44...Uo19</strong><b>−0.50 SOL</b></div></div></section>
   </motion.main>;
 }
 
-function DailyCase({ connected, onConnect, notify }: { connected: boolean; onConnect: () => void; notify: (t: Toast) => void }) {
-  const [opening, setOpening] = useState(false); const [opened, setOpened] = useState(false);
+function DailyCase({ wallet, onConnect, notify }: { wallet: WalletClient; onConnect: () => void; notify: (t: Toast) => void }) {
+  const connected=wallet.connected; const [opening] = useState(false); const [opened] = useState(false);
   const webglReady = useHydrated();
   const reduceMotion = useReducedMotion();
-  const open = () => { if (!connected) return onConnect(); if (!PROGRAM_CONFIGURED) return notify({title:"Devnet setup required",text:"The program address is not configured, so no claim was submitted."}); setOpening(true); setTimeout(() => { setOpening(false); setOpened(true); notify({title:"Reward confirmed",text:"Your on-chain claim was confirmed."});}, 1800); };
+  const open = () => { if (!connected) return onConnect(); notify({title:"Oracle configuration required",text:"Set NEXT_PUBLIC_SWITCHBOARD_QUEUE before daily claims can safely bind verifiable randomness."}); };
   return <motion.main key="daily" className="page subpage" initial={{opacity:0}} animate={{opacity:1}}><div className="case-layout"><section className="case-copy"><div className="eyebrow"><Gift size={14}/> ONE FREE OPEN EVERY 24H</div><h1>Your daily<br/><em>shot at SOL.</em></h1><p>Open your free case. Your reward is generated on-chain and lands directly in your connected wallet.</p><div className="cooldown"><Clock3 size={18}/><div><span>NEXT FREE OPEN</span><strong>{opened ? "23:59:59" : "READY NOW"}</strong></div></div><div className="reward-list"><span>Possible rewards</span>{[0.01,0.05,0.10,0.25,1.00].map(v=><b key={v}><SolIcon/> {v.toFixed(2)}</b>)}</div></section><section className="case-stage"><div className={`case-box ${opening?"opening":""} ${opened?"opened":""}`}>{reduceMotion||!webglReady?<><div className="case-glow"/><div className="case-lid"><span>FATE</span></div><div className="case-body"><Gift size={56}/><span>DAILY</span></div></>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><DailyCase3D opening={opening} opened={opened}/></Suspense>}{opened&&<motion.div className="reward-pop" initial={{scale:.4,opacity:0,y:14}} animate={{scale:1,opacity:1,y:0}} transition={{type:"spring",stiffness:180,damping:15}}><small>YOU UNLOCKED</small><strong><SolIcon/> <AnimatedNumber value={.25}/> SOL</strong><span>Credited to wallet</span></motion.div>}</div><button className="primary case-button" disabled={opening||opened} onClick={open}>{opening?<><Sparkles size={18}/> Revealing on-chain...</>:opened?<><Check size={18}/> Come back tomorrow</>:connected?<><Gift size={18}/> Open free case</>:<><Wallet size={18}/> Connect wallet to open</>}</button><p className="case-note"><ShieldCheck size={14}/> No deposit required · Provably fair</p></section></div><section className="bottom-grid"><Fairness hash="Dc10...F44a"/><div className="card recent-results"><div className="card-title"><div><Clock3 size={18}/><strong>Your recent opens</strong></div><span>Last 3</span></div>{[["Yesterday","0.05"],["Jul 29","0.10"],["Jul 28","0.01"]].map(r=><div className="claim-row" key={r[0]}><div className="mini-case"><Gift size={16}/></div><strong>{r[0]}</strong><span>Daily case</span><b>+{r[1]} SOL</b></div>)}</div></section></motion.main>;
 }
 
-function HistoryPage() {
+function HistoryPage({wallet}:{wallet:WalletClient}) {
+  const {games}=useGames(undefined,undefined,wallet.address);
   const [filter,setFilter]=useState("All games");
-  const shown=useMemo(()=>historyRows.filter(r=>filter==="All games"||r.game===filter),[filter]);
-  return <motion.main key="history" className="page subpage" initial={{opacity:0}} animate={{opacity:1}}><div className="history-head"><div><div className="eyebrow"><History size={14}/> ON-CHAIN ACTIVITY</div><h1>Your game<br/><em>history.</em></h1></div><div className="history-total"><span>All-time P&L</span><strong>+15.22 SOL</strong><small><ArrowUpRight size={13}/> 18.4% return</small></div></div><div className="history-summary"><Stat icon={<Trophy size={20}/>} label="Total won" value="29.14 SOL" accent/><Stat icon={<Swords size={20}/>} label="Games played" value="48"/><Stat icon={<Zap size={20}/>} label="Win rate" value="54.2%"/></div><section className="card history-table"><div className="history-toolbar"><div><strong>Recent activity</strong><span>Verified transactions from your connected wallet</span></div><div className="filters">{["All games","Jackpot","Coinflip","Daily Case"].map(f=><button key={f} className={filter===f?"active":""} onClick={()=>setFilter(f)}>{f}</button>)}</div></div><div className="table-head"><span>GAME</span><span>RESULT</span><span>AMOUNT</span><span>DATE</span><span/></div>{shown.map((r,i)=><motion.div className="table-row" key={r.game+r.id} initial={{opacity:0,y:5}} animate={{opacity:1,y:0}} transition={{delay:i*.04}}><div><div className={`game-icon ${r.game.includes("Daily")?"daily":r.game.toLowerCase()}`}>{r.game==="Jackpot"?<Crown size={17}/>:r.game==="Coinflip"?<Swords size={17}/>:<Gift size={17}/>}</div><p><strong>{r.game}</strong><span>{r.id}</span></p></div><span className={r.win?"status win":"status loss"}>{r.result}</span><b className={r.win?"amount-win":""}>{r.amount} SOL</b><span>{r.date}</span><button aria-label="View transaction"><ArrowUpRight size={16}/></button></motion.div>)}</section></motion.main>;
+  const historyRows=useMemo(()=>games.map(game=>{const name=game.game_type==="jackpot"?"Jackpot":game.game_type==="coinflip"?"Coinflip":"Daily Case";const win=Boolean(wallet.address&&game.winner===wallet.address);return{game:name,id:`#${game.numeric_id}`,result:game.state==="settled"?(win?"Won":"Settled"):game.state,amount:`${win?"+":""}${sol(win?game.payout_lamports:game.wager_lamports).toFixed(2)}`,date:`slot ${game.last_slot}`,win,signature:game.last_signature};}),[games,wallet.address]);
+  const shown=useMemo(()=>historyRows.filter(r=>filter==="All games"||r.game===filter),[filter,historyRows]);
+  return <motion.main key="history" className="page subpage" initial={{opacity:0}} animate={{opacity:1}}><div className="history-head"><div><div className="eyebrow"><History size={14}/> FINALIZED ON-CHAIN ACTIVITY</div><h1>Your game<br/><em>history.</em></h1></div></div><div className="history-summary"><Stat icon={<Swords size={20}/>} label="Indexed games" value={String(games.length)} accent/><Stat icon={<Trophy size={20}/>} label="Wins" value={String(historyRows.filter(r=>r.win).length)}/><Stat icon={<ShieldCheck size={20}/>} label="Commitment" value="Finalized"/></div><section className="card history-table"><div className="history-toolbar"><div><strong>Recent activity</strong><span>Finalized transactions from your connected wallet</span></div><div className="filters">{["All games","Jackpot","Coinflip","Daily Case"].map(f=><button key={f} className={filter===f?"active":""} onClick={()=>setFilter(f)}>{f}</button>)}</div></div><div className="table-head"><span>GAME</span><span>RESULT</span><span>AMOUNT</span><span>DATE</span><span/></div>{shown.map((r,i)=><motion.div className="table-row" key={r.game+r.id} initial={{opacity:0,y:5}} animate={{opacity:1,y:0}} transition={{delay:i*.04}}><div><div className={`game-icon ${r.game.includes("Daily")?"daily":r.game.toLowerCase()}`}>{r.game==="Jackpot"?<Crown size={17}/>:r.game==="Coinflip"?<Swords size={17}/>:<Gift size={17}/>}</div><p><strong>{r.game}</strong><span>{r.id}</span></p></div><span className={r.win?"status win":"status loss"}>{r.result}</span><b className={r.win?"amount-win":""}>{r.amount} SOL</b><span>{r.date}</span><a aria-label="View transaction" target="_blank" rel="noreferrer" href={`https://explorer.solana.com/tx/${r.signature}?cluster=devnet`}><ArrowUpRight size={16}/></a></motion.div>)}</section></motion.main>;
 }
 
 function ToastView({ toast, close }: { toast: Toast; close: () => void }) { return <AnimatePresence>{toast&&<motion.div className="toast" initial={{opacity:0,y:20,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:10}}><div><Check size={18}/></div><p><strong>{toast.title}</strong><span>{toast.text}</span></p><button onClick={close}><X size={16}/></button></motion.div>}</AnimatePresence>; }
@@ -242,5 +238,5 @@ export default function Home() {
   const connect=()=>{if(connected){void wallet.disconnect();logEvent({eventType:"wallet_disconnected",category:"wallet",status:"success",walletAddress:wallet.address??undefined});notify({title:"Wallet disconnected",text:"Connect again whenever you’re ready."});return;}setWalletPicker(true);};
   const selectWallet=(name:string)=>{void wallet.connect(name).then(()=>{setWalletPicker(false);logEvent({eventType:"wallet_connected",category:"wallet",status:"success",metadata:{standard:"wallet_standard",cluster:wallet.cluster,wallet:name}});notify({title:"Wallet connected",text:"Your Solana devnet account is ready."});}).catch((cause:unknown)=>{const text=cause instanceof Error?cause.message:"Wallet connection failed.";logEvent({eventType:"wallet_connection_failed",category:"wallet",status:"failure",metadata:{reason:text.slice(0,120)}});notify({title:"Could not connect",text});});};
   const toggleSound=()=>{const next=!sound;setSound(next);localStorage.setItem("fate_sound",next?"on":"off");playTone("tap",next,audioContext)};
-  return <div className={`app-shell game-${view}`}><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><div className="environment-banner"><span><i/> SOLANA DEVNET</span><p>Engineering preview · Demo game data · No real-value wagers</p></div><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot connected={connected} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip connected={connected} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase connected={connected} onConnect={connect} notify={notify}/>:<HistoryPage/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><FateCopilot walletAddress={wallet.address}/><WalletModal open={walletPicker} wallets={wallet.wallets} connecting={wallet.connecting} close={()=>!wallet.connecting&&setWalletPicker(false)} select={selectWallet}/><ToastView toast={toast} close={()=>setToast(null)}/></div>;
+  return <div className={`app-shell game-${view}`}><div className="noise"/><div className="ambient a1"/><div className="ambient a2"/><Header view={view} setView={setView} connected={connected} connecting={wallet.connecting} address={wallet.address} balance={wallet.balance} connect={connect} sound={sound} toggleSound={toggleSound}/><div className="environment-banner"><span><i/> SOLANA DEVNET</span><p>Wallet-approved transactions · Finalized indexer data · No mainnet wagers</p></div><AnimatePresence mode="wait">{view==="jackpot"?<Jackpot wallet={wallet} onConnect={connect} notify={notify}/>:view==="coinflip"?<Coinflip wallet={wallet} onConnect={connect} notify={notify}/>:view==="daily"?<DailyCase wallet={wallet} onConnect={connect} notify={notify}/>:<HistoryPage wallet={wallet}/>}</AnimatePresence><footer><div className="brand"><Mark small/><span>FATE</span></div><p>Provably fair games. Built on Solana.</p><div><button>Fairness</button><button>Terms</button><button>Support</button><span className="network"><i/> {wallet.cluster === "mainnet-beta" ? "Mainnet" : "Devnet"}</span></div></footer><FateCopilot walletAddress={wallet.address}/><WalletModal open={walletPicker} wallets={wallet.wallets} connecting={wallet.connecting} close={()=>!wallet.connecting&&setWalletPicker(false)} select={selectWallet}/><ToastView toast={toast} close={()=>setToast(null)}/></div>;
 }

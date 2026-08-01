@@ -10,17 +10,19 @@ import {
   type StandardDisconnectFeature,
   type StandardEventsFeature,
 } from "@wallet-standard/features";
+import { SolanaSignAndSendTransaction, type SolanaSignAndSendTransactionFeature } from "@solana/wallet-standard-features";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CHAIN = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
-type CompatibleWallet = Wallet & StandardConnectFeature & Partial<StandardDisconnectFeature & StandardEventsFeature>;
+type CompatibleWallet = Wallet & StandardConnectFeature & SolanaSignAndSendTransactionFeature & Partial<StandardDisconnectFeature & StandardEventsFeature>;
 
 function isCompatible(wallet: Wallet): wallet is CompatibleWallet {
   return CHAIN === "solana:devnet" || wallet.chains.includes(CHAIN as `${string}:${string}`)
-    ? StandardConnect in wallet.features
+    ? StandardConnect in wallet.features && SolanaSignAndSendTransaction in wallet.features
     : false;
 }
 
@@ -91,6 +93,32 @@ export function useSolanaWallet() {
     }
   }, [wallet]);
 
+  const sendTransaction = useCallback(async (transaction: Transaction, onStatus?: (status: "awaiting_approval" | "submitted" | "confirmed" | "finalized") => void) => {
+    if (!wallet || !account) throw new Error("Connect a compatible Solana wallet first.");
+    const connection = new Connection(rpcUrl, "confirmed");
+    const latest = await connection.getLatestBlockhash("confirmed");
+    transaction.feePayer = new PublicKey(account.address);
+    transaction.recentBlockhash = latest.blockhash;
+    onStatus?.("awaiting_approval");
+    const [output] = await wallet.features[SolanaSignAndSendTransaction].signAndSendTransaction({
+      account, chain: CHAIN as `${string}:${string}`, transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
+      options: { commitment: "confirmed", skipPreflight: false, maxRetries: 3 },
+    });
+    if (!output) throw new Error("The wallet returned no transaction signature.");
+    const signature = base58(output.signature); onStatus?.("submitted");
+    const confirmation = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+    if (confirmation.value.err) throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    onStatus?.("confirmed");
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+      if (status?.err) throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+      if (status?.confirmationStatus === "finalized") { onStatus?.("finalized"); await refreshBalance(account); return signature; }
+      await new Promise(resolve => setTimeout(resolve, 1_500));
+    }
+    throw new Error(`Transaction ${signature} confirmed but finalization is still pending.`);
+  }, [account, refreshBalance, rpcUrl, wallet]);
+
   useEffect(() => {
     if (!wallet || !(StandardEvents in wallet.features)) return;
     return wallet.features[StandardEvents].on("change", ({ accounts }) => {
@@ -118,5 +146,14 @@ export function useSolanaWallet() {
     connect,
     disconnect,
     refreshBalance,
+    sendTransaction,
   };
+}
+
+function base58(bytes: Uint8Array) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const digits = [0];
+  for (const byte of bytes) { let carry = byte; for (let i = 0; i < digits.length; i++) { const value = digits[i] * 256 + carry; digits[i] = value % 58; carry = Math.floor(value / 58); } while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); } }
+  let output = ""; for (const byte of bytes) { if (byte !== 0) break; output += "1"; }
+  return output + digits.reverse().map(value => alphabet[value]).join("");
 }
