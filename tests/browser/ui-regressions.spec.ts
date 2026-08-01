@@ -27,6 +27,9 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(page.getByText("No fairness proof available", { exact: true })).toBeVisible();
   await expect(page.getByText("A7f3...9c2B", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy fairness proof" })).toHaveCount(0);
+  await expect(page.getByText("No previous winner available", { exact: true })).toBeVisible();
+  await expect(page.getByText("7cXq...2Kp9", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("12.84 SOL", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: /Connect wallet to enter/ }).click();
   const walletDialog = page.getByRole("dialog", { name: "Connect a wallet" });
@@ -34,7 +37,7 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(walletDialog.getByRole("button", { name: "Continue in demo mode" })).toHaveCount(1);
   await walletDialog.getByRole("button", { name: "Close wallet picker" }).click();
 
-  await expect(page.getByText("Transaction unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText("Transaction unavailable", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /View transaction/ })).toHaveCount(0);
 });
 

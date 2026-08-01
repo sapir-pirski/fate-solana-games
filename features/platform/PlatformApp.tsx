@@ -131,7 +131,9 @@ function Fairness({ hash }: { hash?: string | null }) {
 function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnect: () => void; notify: (t: Toast) => void }) {
   const connected = wallet.connected;
   const { games, loading, error, refresh } = useGames("jackpot", "open");
+  const { games: settledRounds, loading: settledLoading, error: settledError } = useGames("jackpot", "settled");
   const round = games[0];
+  const previousRound = settledRounds[0];
   const [amount, setAmount] = useState("0.50");
   const [submitting, setSubmitting] = useState(false);
   const [seconds, setSeconds] = useState(18);
@@ -186,7 +188,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
 
     <section className="bottom-grid">
       <Fairness hash={round?.randomness_hex ?? null}/>
-      <div className="previous card"><div className="card-title"><div><Trophy size={18}/><strong>Previous winner</strong></div><span>Preview only</span></div><div className="winner"><div className="winner-mark">7c</div><div><strong>7cXq...2Kp9</strong><span>Example result · not indexed</span></div><b><SolIcon /> 12.84 SOL</b></div><span className="text-link unavailable" title="A transaction link appears after a finalized result is indexed">Transaction unavailable <ShieldCheck size={14}/></span></div>
+      <div className="previous card"><div className="card-title"><div><Trophy size={18}/><strong>Previous winner</strong></div><span>{previousRound ? "FINALIZED" : settledLoading ? "SYNCING" : settledError ? "UNAVAILABLE" : "NO RESULT"}</span></div>{previousRound?.winner ? <><div className="winner"><div className="winner-mark">{previousRound.winner.slice(0,2)}</div><div><strong>{short(previousRound.winner)}</strong><span>Round #{previousRound.numeric_id} · slot {previousRound.last_slot}</span></div><b><SolIcon /> {sol(previousRound.payout_lamports).toFixed(2)} SOL</b></div>{previousRound.last_signature ? <a className="text-link" target="_blank" rel="noreferrer" href={`https://explorer.solana.com/tx/${previousRound.last_signature}?cluster=devnet`}>View transaction <ArrowUpRight size={14}/></a> : <span className="text-link unavailable">Transaction unavailable <ShieldCheck size={14}/></span>}</> : <div className="winner empty"><div className="winner-mark">—</div><div><strong>No previous winner available</strong><span>{settledError ?? "No settled jackpot round has been indexed."}</span></div></div>}</div>
     </section>
   </motion.main>;
 }
