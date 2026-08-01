@@ -7,4 +7,4 @@ const compose=readFileSync(new URL("../compose.local.yaml",import.meta.url),"utf
 
 test("database rate limits are atomic and identifiers are hashed",()=>{assert.match(coordination,/sha256\(input\.subject\)/);assert.match(coordination,/rateLimitBuckets\.count\}\+1/);assert.match(coordination,/retry-after/);});
 test("durable D1 jobs are idempotent",()=>{assert.match(coordination,/dedupeKey/);assert.match(coordination,/onConflictDoUpdate/);assert.match(coordination,/backgroundJobs/);});
-test("local platform uses one D1 database and no external database service",()=>{assert.doesNotMatch(compose,/^\s{2}(redis|postgres):/m);assert.doesNotMatch(compose,/(redis|postgres)-exporter/);assert.match(compose,/app_state:\s*\{\}/);});
+test("local platform uses one D1 database and only approved services",()=>{const serviceBlock=compose.slice(compose.indexOf("services:"),compose.indexOf("\nnetworks:"));const services=[...serviceBlock.matchAll(/^  ([a-z][a-z0-9-]+):$/gm)].map(match=>match[1]);assert.deepEqual(services,["app","prometheus","loki","tempo","alloy","grafana"]);assert.match(compose,/app_state:\s*\{\}/);});
