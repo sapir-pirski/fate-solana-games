@@ -1,0 +1,26 @@
+config:
+  logs:
+    enabled: true
+    collectAgentLogs: false
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - default
+      - skypilot-system
+      - cilium-secrets
+      - observability
+  metrics:
+    enabled: true
+    collectAgentMetrics: false
+    collectK8sClusterMetrics: false
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - default
+      - skypilot-system
+      - cilium-secrets
+      - observability
+  traces:
+    enabled: false

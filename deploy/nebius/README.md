@@ -9,13 +9,15 @@ Target project: `project-e00sv4bvpr00wr5e5kr9xr` (`tlv-pe-hw2`, `eu-north1`).
 - Object Storage: `fate-platform-backups-e00sv4bv` (versioning enabled)
 - Kubernetes CPU node group: `mk8snodegroup-e00n1stcmsef1ccq6w` (`fate-cpu-ng`, 1 x 2 vCPU/8 GiB)
 - Managed PostgreSQL: `postgresql-e00rdx7hqp2jy2kdrz` (`fate-postgres`, PostgreSQL 16)
+- SecretStash: `mbsec-e00vv1b2pb79qj7t72` (`fate-platform-secrets`)
+- Observability: `nebius-observability-agent` Helm release in namespace `observability`
 - Current CPU runtime: `oref-app` VM, isolated `fate-platform` container
 - HTTPS endpoint: `https://fate.89-169-122-60.sslip.io`
 
 The project Kubernetes cluster `mk8scluster-e00bj563eq2858w1qr` also contains
 shared H100 GPU workers. FATE workloads select and tolerate only the dedicated
 `workload=fate:NoSchedule` CPU node. The existing `oref-postgres` cluster belongs to the
-Oref workload and is not reused. FATE uses its isolated `fate-postgres` cluster;
+Oref workload and is not reused. FATE uses its isolated three-host `fate-postgres` cluster;
 Cloudflare deployments remain compatible with the D1 binding.
 
 Nebius image URLs use the registry resource ID without its `registry-` prefix,
