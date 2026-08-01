@@ -60,3 +60,24 @@ test("copilot floats without collision and safety lives in the footer", async ({
   await safety.click();
   await expect(page.getByRole("dialog", { name: "Eligibility and controls" })).toBeVisible();
 });
+
+test("copilot dismisses outside, wraps prompts, and offers retry on provider failure", async ({ page }) => {
+  await page.route("**/api/ai/chat", route => route.fulfill({ status: 503, contentType: "application/json", body: '{"code":"AI_UNAVAILABLE","requestId":"test-request"}' }));
+  await page.goto("/");
+  const launcher = page.locator(".copilot-launcher");
+  await launcher.click();
+  const dialog = page.getByRole("dialog", { name: "FATE Copilot" });
+  await expect(dialog).toBeVisible();
+  const prompts = dialog.locator(".ai-prompts button");
+  await expect(prompts).toHaveCount(3);
+  for (const prompt of await prompts.all()) await expect(prompt).toBeInViewport();
+  await prompts.first().click();
+  await expect(dialog.getByText("Copilot is temporarily unavailable. Please retry.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss Copilot" }).click({ position: { x: 4, y: 4 } });
+  await expect(dialog).toBeHidden();
+  await expect(launcher).toBeFocused();
+  await launcher.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
