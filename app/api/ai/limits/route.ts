@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import { ensureAiSchema, getDb } from "../../../../db";
+import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { responsiblePlayLimits } from "../../../../db/schema";
 import { BASE58 } from "../../../../lib/ai/policy";
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   await ensureAiSchema();
   const wallet = new URL(request.url).searchParams.get("wallet");
   if (!wallet || !BASE58.test(wallet)) return Response.json({ code: "INVALID_WALLET" }, { status: 400 });
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   return Response.json({ limits: limits ?? null }, { headers: { "cache-control": "no-store" } });
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   await ensureAiSchema();
   const body = await request.json() as Record<string, unknown>; const wallet = String(body.walletAddress ?? "");
   if (!BASE58.test(wallet)) return Response.json({ code: "INVALID_WALLET" }, { status: 400 });
@@ -26,3 +26,10 @@ export async function POST(request: Request) {
   return Response.json({ limits: values }, { status: 201 });
 }
 
+export async function GET(request: Request) {
+  return withDatabase(() => handleGet(request));
+}
+
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
+}

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { asc, eq } from "drizzle-orm";
-import { ensureAiSchema, getDb } from "../../../../db";
+import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiConversations, aiMessages, aiToolCalls, aiUsage } from "../../../../db/schema";
 import { FATE_AI_SYSTEM_PROMPT, BASE58, redactError, safeModel, walletHash } from "../../../../lib/ai/policy";
 import { AI_TOOLS, executeAiTool } from "../../../../lib/ai/tools";
@@ -27,7 +27,7 @@ function streamAnswer(answer: string, metadata: Record<string, unknown>) {
   } }), { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", connection: "keep-alive" } });
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const body = await request.json() as { message?: unknown; conversationId?: unknown; walletAddress?: unknown };
@@ -74,4 +74,8 @@ export async function POST(request: Request) {
     console.error(JSON.stringify({ event: "ai_chat_failed", requestId, error: redactError(error) }));
     return Response.json({ code: "AI_UNAVAILABLE", requestId }, { status: 503, headers: { "retry-after": "5" } });
   }
+}
+
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
 }

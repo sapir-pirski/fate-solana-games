@@ -1,4 +1,4 @@
-import { ensureEventLogSchema, getDb, pruneEventLogs } from "../../../db";
+import { ensureEventLogSchema, getDb, pruneEventLogs, withDatabase } from "../../../db";
 import { eventLogs } from "../../../db/schema";
 
 const EVENT_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
@@ -67,7 +67,7 @@ async function runRetentionIfDue() {
   await pruneEventLogs(RETENTION_DAYS);
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const requestId = crypto.randomUUID();
   try {
     const contentLength = Number(request.headers.get("content-length") ?? 0);
@@ -94,4 +94,8 @@ export async function POST(request: Request) {
     console.error(JSON.stringify({ event: "event_log_batch_failed", requestId, error: error instanceof Error ? error.message : "unknown" }));
     return Response.json({ code: "STORAGE_UNAVAILABLE", requestId }, { status: 503, headers: { "retry-after": "5" } });
   }
+}
+
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
 }

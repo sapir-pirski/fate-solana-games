@@ -1,8 +1,8 @@
 import { asc, eq } from "drizzle-orm";
-import { ensureAiSchema, getDb } from "../../../../db";
+import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { agentAlerts, agentRuns, games, indexerCheckpoints } from "../../../../db/schema";
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const expected = process.env.INDEXER_AUTH_TOKEN;
   if (!expected || expected.startsWith("replace-") || request.headers.get("authorization") !== `Bearer ${expected}`) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
   await ensureAiSchema(); const id = crypto.randomUUID();
@@ -22,3 +22,6 @@ export async function POST(request: Request) {
   }
 }
 
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
+}

@@ -1,4 +1,4 @@
-import { ensureAiSchema, getDb } from "../../../../db";
+import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { agentRuns } from "../../../../db/schema";
 
 type ArenaAgent = { name: string; style: "cautious" | "balanced" | "bold"; budgetLamports: number };
@@ -8,7 +8,7 @@ function score(agent: ArenaAgent, round: number) {
   return (hash >>> 0) / 0xffffffff;
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   if (process.env.AI_AGENT_ARENA_NETWORK !== "devnet") return Response.json({ code: "ARENA_MUST_USE_DEVNET" }, { status: 403 });
   if (process.env.AI_AGENT_ARENA_ENABLED !== "true") return Response.json({ code: "ARENA_DISABLED", message: "Set AI_AGENT_ARENA_ENABLED=true for local devnet simulations." }, { status: 503 });
   const body = await request.json() as { agents?: ArenaAgent[]; rounds?: number }; const agents = body.agents ?? [];
@@ -26,3 +26,6 @@ export async function POST(request: Request) {
   return Response.json({ runId, ...output }, { status: 201 });
 }
 
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
+}

@@ -8,14 +8,15 @@ Target project: `project-e00sv4bvpr00wr5e5kr9xr` (`tlv-pe-hw2`, `eu-north1`).
 - KMS key: `kmssymkey-e00bvmk550v2pwnfgw` (`fate-platform-data-key`, AES-256, 90-day rotation)
 - Object Storage: `fate-platform-backups-e00sv4bv` (versioning enabled)
 - Kubernetes CPU node group: `mk8snodegroup-e00n1stcmsef1ccq6w` (`fate-cpu-ng`, 1 x 2 vCPU/8 GiB)
+- Managed PostgreSQL: `postgresql-e00rdx7hqp2jy2kdrz` (`fate-postgres`, PostgreSQL 16)
 - Current CPU runtime: `oref-app` VM, isolated `fate-platform` container
 - HTTPS endpoint: `https://fate.89-169-122-60.sslip.io`
 
 The project Kubernetes cluster `mk8scluster-e00bj563eq2858w1qr` also contains
 shared H100 GPU workers. FATE workloads select and tolerate only the dedicated
 `workload=fate:NoSchedule` CPU node. The existing `oref-postgres` cluster belongs to the
-Oref workload and must not be reused; FATE needs its own cluster after the
-D1/SQLite persistence adapter is migrated to PostgreSQL.
+Oref workload and is not reused. FATE uses its isolated `fate-postgres` cluster;
+Cloudflare deployments remain compatible with the D1 binding.
 
 Nebius image URLs use the registry resource ID without its `registry-` prefix,
 for example `cr.eu-north1.nebius.cloud/e00zey749styjjkd0g/fate-platform:<tag>`.

@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import { ensureAiSchema, getDb } from "../../../../db";
+import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiFeedback, aiMessages } from "../../../../db/schema";
 import { BASE58, walletHash } from "../../../../lib/ai/policy";
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const body = await request.json() as Record<string, unknown>;
   const messageId = typeof body.messageId === "string" ? body.messageId : "";
   const rating = Number(body.rating);
@@ -16,4 +16,8 @@ export async function POST(request: Request) {
   const values = { id: crypto.randomUUID(), messageId, walletHash: identity, rating };
   await getDb().insert(aiFeedback).values(values).onConflictDoUpdate({ target: [aiFeedback.messageId, aiFeedback.walletHash], set: { rating } });
   return Response.json({ saved: true }, { status: 201 });
+}
+
+export async function POST(request: Request) {
+  return withDatabase(() => handlePost(request));
 }
