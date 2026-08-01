@@ -23,14 +23,23 @@ function requireWallet(value: unknown) {
   return value;
 }
 
-export async function executeAiTool(name: string, raw: Record<string, unknown>) {
+export type AiToolContext = { authenticatedWallet: string | null };
+
+function authorizedWallet(raw: Record<string, unknown>, context: AiToolContext) {
+  const requested = requireWallet(raw.walletAddress);
+  if (!context.authenticatedWallet) throw new Error("WALLET_AUTH_REQUIRED");
+  if (requested !== context.authenticatedWallet) throw new Error("WALLET_ACCESS_DENIED");
+  return requested;
+}
+
+export async function executeAiTool(name: string, raw: Record<string, unknown>, context: AiToolContext = { authenticatedWallet: null }) {
   if (name === "explain_game") {
     const gameType = String(raw.gameType);
     if (!GAME_TYPES.has(gameType)) throw new Error("INVALID_GAME_TYPE");
     return { gameType, ...rules[gameType as keyof typeof rules], source: "program-design", network: "devnet" };
   }
   if (name === "get_wallet_activity") {
-    const wallet = requireWallet(raw.walletAddress);
+    const wallet = authorizedWallet(raw, context);
     const entries = await getDb().select().from(gameEntries).where(eq(gameEntries.walletAddress, wallet)).orderBy(desc(gameEntries.slot)).limit(25);
     return { wallet, count: entries.length, totalLamports: entries.reduce((sum, entry) => sum + entry.amountLamports, 0), entries };
   }
@@ -51,15 +60,15 @@ export async function executeAiTool(name: string, raw: Record<string, unknown>) 
     return { signature, trackedIntent: intent ?? null, rpcStatus };
   }
   if (name === "check_responsible_limits") {
-    const wallet = requireWallet(raw.walletAddress); const proposed = Number(raw.proposedLamports);
+    const wallet = authorizedWallet(raw, context); const proposed = Number(raw.proposedLamports);
     const [limits] = await getDb().select().from(responsiblePlayLimits).where(eq(responsiblePlayLimits.walletAddress, wallet)).limit(1);
     const now = Math.floor(Date.now() / 1000); const blocked = Boolean(limits && ((limits.cooldownUntil ?? 0) > now || (limits.selfExcludedUntil ?? 0) > now || (limits.dailyLamports != null && proposed > limits.dailyLamports)));
     return { wallet, proposedLamports: proposed, allowed: !blocked, limits: limits ?? null, reason: blocked ? "A configured limit or cooldown blocks this draft." : null };
   }
   if (name === "draft_game_action") {
-    const wallet = requireWallet(raw.walletAddress); const gameType = String(raw.gameType); const amount = Number(raw.amountLamports);
+    const wallet = authorizedWallet(raw, context); const gameType = String(raw.gameType); const amount = Number(raw.amountLamports);
     if (!GAME_TYPES.has(gameType) || !Number.isSafeInteger(amount) || amount < 0) throw new Error("INVALID_DRAFT");
-    const limit = await executeAiTool("check_responsible_limits", { walletAddress: wallet, proposedLamports: amount }) as { allowed: boolean; reason: string | null };
+    const limit = await executeAiTool("check_responsible_limits", { walletAddress: wallet, proposedLamports: amount }, context) as { allowed: boolean; reason: string | null };
     return { id: crypto.randomUUID(), network: "devnet", wallet, gameType, action: raw.action, amountLamports: amount, side: raw.side, simulationRequired: true, walletApprovalRequired: true, submitted: false, allowed: limit.allowed, blocker: limit.reason, expiresAt: Date.now() + 10 * 60_000 };
   }
   throw new Error("UNKNOWN_TOOL");

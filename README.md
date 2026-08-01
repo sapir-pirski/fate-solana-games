@@ -56,7 +56,7 @@ Financial state is separate from product analytics. `chain_events` is replay-saf
 
 The floating FATE Copilot uses the OpenAI Responses API with read-only, allow-listed tools. It can explain rules, summarize indexed wallet activity, verify stored fairness evidence, diagnose transaction signatures, check responsible-play limits, and produce unsigned devnet action drafts. Every conversation, assistant message, tool call, token count, and user rating is stored in a dedicated audit table. Private keys and signing are never available to the model.
 
-Set `OPENAI_API_KEY` in `.env.local` to enable Copilot. `OPENAI_MODEL` defaults to `gpt-5.6-sol`; provider credentials stay server-side. The operations audit endpoint requires `INDEXER_AUTH_TOKEN` and only returns a keeper plan—it does not sign. The transparent agent arena uses deterministic fixed policies, test balances, and devnet only; opt in locally with `AI_AGENT_ARENA_ENABLED=true`.
+Set `OPENAI_API_KEY` in `.env.local` to enable Copilot. `OPENAI_MODEL` defaults to `gpt-5.6-sol`; provider credentials stay server-side. The operations audit endpoint requires `INDEXER_AUTH_TOKEN` and only returns a keeper plan—it does not sign. The unfinished agent arena was removed from production.
 
 Responsible-play limits are deterministic application controls, not model judgments. Self-exclusion cannot be shortened while active, and AI drafts still require simulation plus explicit approval by the connected wallet.
 

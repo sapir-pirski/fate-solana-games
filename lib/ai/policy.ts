@@ -19,6 +19,14 @@ Style: State the answer directly. Separate verified evidence from inference. Kee
 
 export const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,100}$/;
 export const GAME_TYPES = new Set(["jackpot", "coinflip", "daily"]);
+const SECRET_PATTERN = /(?:sk-[A-Za-z0-9_-]{20,}|(?:seed|recovery|mnemonic|private\s*key|api\s*key)\s*[:=]\s*\S+)/i;
+const INJECTION_PATTERN = /(?:ignore|disregard|override)\s+(?:all\s+)?(?:previous|prior|system|developer)(?:\s+(?:system|developer|previous|prior))?\s+(?:instructions?|messages?|rules?)/i;
+
+export function validatePrompt(value: string) {
+  if (SECRET_PATTERN.test(value)) return { allowed: false as const, code: "SENSITIVE_INPUT" };
+  if (INJECTION_PATTERN.test(value)) return { allowed: false as const, code: "UNSAFE_INSTRUCTION" };
+  return { allowed: true as const };
+}
 
 export function safeModel(value: string | undefined) {
   return value && !value.startsWith("replace-") ? value : "gpt-5.6-sol";
@@ -35,4 +43,3 @@ export function redactError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown AI service error";
   return message.replace(/sk-[A-Za-z0-9_-]+/g, "[REDACTED]").slice(0, 240);
 }
-

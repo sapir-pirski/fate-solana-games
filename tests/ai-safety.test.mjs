@@ -16,12 +16,17 @@ test("Responses calls are stateless and tool rounds are bounded", async () => {
   assert.match(route, /const MAX_TOOL_ROUNDS = 3/);
   assert.match(route, /store: false/);
   assert.doesNotMatch(route, /previous_response_id/);
+  assert.match(route, /authenticatedWallet/);
+  assert.match(route, /enforceRateLimit/);
+  assert.match(route, /AI_MAX_TOKENS_PER_WALLET_DAY/);
 });
 
-test("agent automation remains devnet-only and non-signing", async () => {
-  const arena = await read("app/api/ai/arena/route.ts");
+test("unfinished Arena is not exposed in the production Copilot UI", async () => {
+  const component = await read("app/ai/FateCopilot.tsx");
+  assert.doesNotMatch(component, /runArena|Devnet Agent Arena|\"arena\"/);
+});
+
+test("operations automation remains non-signing", async () => {
   const ops = await read("app/api/ai/ops/route.ts");
-  assert.match(arena, /AI_AGENT_ARENA_NETWORK !== "devnet"/);
-  assert.match(arena, /realValue: false/);
   assert.match(ops, /automaticSigning: false/);
 });

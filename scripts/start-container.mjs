@@ -7,10 +7,12 @@ const sourceConfig = new URL("../dist/server/wrangler.json", import.meta.url);
 const runtimeConfig = new URL("../dist/server/.wrangler.runtime.json", import.meta.url).pathname;
 const allowedVariables = [
   "APP_REVISION",
-  "AI_AGENT_ARENA_ENABLED",
-  "AI_AGENT_ARENA_NETWORK",
   "AI_MAX_REQUESTS_PER_WALLET_DAY",
+  "AI_MAX_TOKENS_PER_WALLET_DAY",
+  "AI_PROVIDER_TIMEOUT_MS",
   "AI_MONTHLY_BUDGET_USD",
+  "AI_INPUT_USD_PER_MILLION_TOKENS",
+  "AI_OUTPUT_USD_PER_MILLION_TOKENS",
   "DATABASE_POOL_SIZE",
   "DATABASE_SSL",
   "DATABASE_URL",
