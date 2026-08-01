@@ -90,3 +90,23 @@ settings. It never imports production secrets or production game state.
 
 Use `./scripts/local-platform.sh status`, `health`, `logs`, and `down` to operate
 the stack. `./scripts/local-platform.sh ai-up` starts optional Ollama separately.
+
+## Test matrix
+
+Run the fast build, security, and unit suites with `npm test` and
+`npm run test:unit`. With the local platform running, use
+`npm run test:integration`, `npm run test:contract`, and
+`npm run test:browser` for PostgreSQL, API-contract, and desktop/mobile browser
+coverage. `npm run test:load` runs the read-only k6 workload against port 3100.
+
+Failure recovery is deliberately opt-in because it restarts local containers:
+
+```sh
+FATE_RUN_FAILURE_TESTS=1 npm run test:failure
+```
+
+The devnet smoke check is also opt-in and refuses any non-devnet endpoint:
+
+```sh
+FATE_RUN_DEVNET_TESTS=1 npm run test:devnet
+```
