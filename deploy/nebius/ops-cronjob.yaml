@@ -13,6 +13,13 @@ spec:
       backoffLimit: 2
       template:
         spec:
+          nodeSelector:
+            workload: fate
+          tolerations:
+            - key: workload
+              operator: Equal
+              value: fate
+              effect: NoSchedule
           restartPolicy: Never
           containers:
             - name: audit
@@ -25,4 +32,3 @@ spec:
               resources:
                 requests: { cpu: 10m, memory: 16Mi }
                 limits: { cpu: 100m, memory: 64Mi }
-

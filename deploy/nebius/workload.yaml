@@ -31,6 +31,13 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3000"
     spec:
+      nodeSelector:
+        workload: fate
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: fate
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
@@ -116,4 +123,3 @@ spec:
         - { protocol: TCP, port: 3000 }
   egress:
     - {}
-
