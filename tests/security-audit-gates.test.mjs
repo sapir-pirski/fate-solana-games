@@ -24,3 +24,12 @@ test("external audit scope requires immutable evidence and retesting", async () 
   assert.match(scope, /reproducible test/i);
   assert.match(scope, /final retest status/i);
 });
+
+test("devnet acceptance fails closed on missing live deployment evidence", async () => {
+  const [script, record] = await Promise.all([read("scripts/devnet-acceptance.mjs"), read("docs/DEVNET_ACCEPTANCE.md")]);
+  assert.match(script, /program deployed and executable/);
+  assert.match(script, /configuration PDA initialized/);
+  assert.match(script, /process\.exitCode = 1/);
+  assert.match(record, /BLOCKED — transactional acceptance has not started/);
+  assert.match(record, /No transaction signatures or successful game journeys are claimed/);
+});

@@ -19,6 +19,7 @@
     "test:failure": "bash tests/failure/run-recovery.sh",
     "test:all": "npm test && npm run test:unit && npm run test:integration && npm run test:contract && npm run test:browser",
     "test:devnet": "node scripts/devnet-smoke.mjs",
+    "test:acceptance": "node scripts/devnet-acceptance.mjs",
     "test:production": "node scripts/production-smoke.mjs",
     "test:bundle": "npm run build && node scripts/check-bundle-budget.mjs",
     "security:audit": "npm audit --audit-level=low",

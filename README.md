@@ -125,3 +125,9 @@ The devnet smoke check is also opt-in and refuses any non-devnet endpoint:
 ```sh
 FATE_RUN_DEVNET_TESTS=1 npm run test:devnet
 ```
+
+`npm run test:acceptance` verifies the public deployment, devnet RPC, executable
+program account, and configuration PDA. It fails closed until those live gates
+exist. The required transactional evidence matrix and current result are in
+`docs/DEVNET_ACCEPTANCE.md`; passing local tests must never be reported as
+completed devnet acceptance.
