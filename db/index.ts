@@ -148,6 +148,21 @@ export async function ensureAiSchema() {
   await aiSchemaReady;
 }
 
+let authSchemaReady: Promise<unknown> | null = null;
+export async function ensureAuthSchema() {
+  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  if (!authSchemaReady) authSchemaReady = env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_auth_challenges (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, nonce_hash TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_auth_challenges_wallet_idx ON wallet_auth_challenges (wallet_address, expires_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_sessions (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL, revoked_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_sessions_wallet_idx ON wallet_sessions (wallet_address, expires_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS transaction_operations_wallet_status_idx ON transaction_operations (wallet_address, status)"),
+  ]).catch((error: unknown) => { authSchemaReady = null; throw error; });
+  await authSchemaReady;
+}
+
 export async function checkDatabaseHealth() {
   if (getDatabaseBackend() === "postgres") {
     await withDatabase(async () => {

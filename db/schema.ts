@@ -125,6 +125,26 @@ export const transactionIntents = sqliteTable(
   ],
 );
 
+export const walletAuthChallenges = sqliteTable("wallet_auth_challenges", {
+  id: text("id").primaryKey(), walletAddress: text("wallet_address").notNull(), nonceHash: text("nonce_hash").notNull(),
+  message: text("message").notNull(), expiresAt: integer("expires_at").notNull(), usedAt: integer("used_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("wallet_auth_challenges_wallet_idx").on(table.walletAddress, table.expiresAt)]);
+
+export const walletSessions = sqliteTable("wallet_sessions", {
+  id: text("id").primaryKey(), tokenHash: text("token_hash").notNull(), walletAddress: text("wallet_address").notNull(),
+  expiresAt: integer("expires_at").notNull(), lastSeenAt: integer("last_seen_at").notNull(), revokedAt: integer("revoked_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("wallet_sessions_token_uidx").on(table.tokenHash), index("wallet_sessions_wallet_idx").on(table.walletAddress, table.expiresAt)]);
+
+export const transactionOperations = sqliteTable("transaction_operations", {
+  id: text("id").primaryKey(), operationId: text("operation_id").notNull(), walletAddress: text("wallet_address").notNull(),
+  gameType: text("game_type").notNull(), action: text("action").notNull(), status: text("status").notNull(),
+  signature: text("signature"), errorCode: text("error_code"), errorMessage: text("error_message"), attempts: integer("attempts").notNull().default(0),
+  lastValidBlockHeight: integer("last_valid_block_height"), expiresAt: integer("expires_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("transaction_operations_operation_uidx").on(table.operationId), uniqueIndex("transaction_operations_signature_uidx").on(table.signature), index("transaction_operations_wallet_status_idx").on(table.walletAddress, table.status)]);
+
 export const indexerCheckpoints = sqliteTable("indexer_checkpoints", {
   consumer: text("consumer").primaryKey(),
   lastSignature: text("last_signature"),
