@@ -259,12 +259,6 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
-    const scrollY = window.scrollY;
-    const previousBodyStyles = { overflow: document.body.style.overflow, overscrollBehavior: document.body.style.overscrollBehavior };
-    const previousRootOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "none";
-    document.documentElement.style.overflow = "hidden";
     const focusFrame = window.requestAnimationFrame(() => dialog?.focus({ preventScroll: true }));
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !connectingRef.current) closeRef.current();
@@ -279,9 +273,6 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
     return () => {
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", onKeyDown);
-      Object.assign(document.body.style, previousBodyStyles);
-      document.documentElement.style.overflow = previousRootOverflow;
-      window.scrollTo(0, scrollY);
       previous?.focus({ preventScroll: true });
     };
   }, [open]);
@@ -290,7 +281,7 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
     setMode(next);
     window.requestAnimationFrame(() => { if (dialogRef.current) dialogRef.current.scrollTop = scrollTop; });
   };
-  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section ref={dialogRef} tabIndex={-1} className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" aria-describedby="wallet-description" initial={{opacity:0,y:18,scale:.97,rotateX:-3}} animate={{opacity:1,y:0,scale:1,rotateX:0}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()}>
+  return <AnimatePresence>{open&&<motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onMouseDown={close}><motion.section ref={dialogRef} tabIndex={-1} className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" aria-describedby="wallet-description" initial={{opacity:0,y:18,scale:.97,rotateX:-3}} animate={{opacity:1,y:0,scale:1,rotateX:0}} exit={{opacity:0,y:12,scale:.98}} onMouseDown={event=>event.stopPropagation()} onWheel={event=>event.stopPropagation()} onTouchMove={event=>event.stopPropagation()}>
     <div className="modal-head"><div><span>FATE · DEVNET</span><h2 id="wallet-title">Connect a wallet</h2></div><button onClick={close} disabled={connecting} aria-label="Close wallet picker"><X size={18}/></button></div>
     <p id="wallet-description">Your wallet keeps the keys. FATE only requests approval for clearly described devnet actions.</p>
     <div className="wallet-tabs" role="tablist" aria-label="Connection method"><button role="tab" aria-selected={mode==="browser"} className={mode==="browser"?"active":""} onClick={()=>switchMode("browser")}><Monitor size={15}/> Browser</button><button role="tab" aria-selected={mode==="mobile"} className={mode==="mobile"?"active":""} onClick={()=>switchMode("mobile")}><Smartphone size={15}/> Mobile / QR</button></div>
