@@ -29,6 +29,7 @@ pub mod fate_games {
         randomness_program: Pubkey,
         randomness_queue: Pubkey,
         treasury: Pubkey,
+        pause_authority: Pubkey,
         fee_bps: u16,
         min_wager: u64,
         max_wager: u64,
@@ -36,7 +37,9 @@ pub mod fate_games {
         require!(
             randomness_program != Pubkey::default()
                 && randomness_queue != Pubkey::default()
-                && treasury != Pubkey::default(),
+                && treasury != Pubkey::default()
+                && pause_authority != Pubkey::default()
+                && pause_authority != treasury,
             FateError::InvalidAuthority
         );
         require!(fee_bps <= 1_000, FateError::FeeTooHigh);
@@ -47,6 +50,10 @@ pub mod fate_games {
         let config = &mut ctx.accounts.config;
         config.admin = ctx.accounts.admin.key();
         config.pending_admin = Pubkey::default();
+        config.pending_admin_effective_at = 0;
+        config.pause_authority = pause_authority;
+        config.pending_pause_authority = Pubkey::default();
+        config.pending_pause_effective_at = 0;
         config.randomness_program = randomness_program;
         config.randomness_queue = randomness_queue;
         config.treasury = treasury;
@@ -66,14 +73,28 @@ pub mod fate_games {
             admin: config.admin,
             randomness_program,
             randomness_queue,
-            treasury
+            treasury,
+            pause_authority,
         });
         Ok(())
     }
 
-    pub fn set_paused(ctx: Context<AdminConfig>, paused: bool) -> Result<()> {
+    pub fn set_paused(ctx: Context<AuthorityConfig>, paused: bool) -> Result<()> {
+        let expected = if paused {
+            ctx.accounts.config.pause_authority
+        } else {
+            ctx.accounts.config.admin
+        };
+        require_keys_eq!(
+            ctx.accounts.authority.key(),
+            expected,
+            FateError::InvalidAuthority
+        );
         ctx.accounts.config.paused = paused;
-        emit!(PauseChanged { paused });
+        emit!(PauseChanged {
+            authority: ctx.accounts.authority.key(),
+            paused,
+        });
         Ok(())
     }
 
@@ -174,7 +195,18 @@ pub mod fate_games {
             pending_admin != Pubkey::default(),
             FateError::InvalidAuthority
         );
-        ctx.accounts.config.pending_admin = pending_admin;
+        let config = &mut ctx.accounts.config;
+        config.pending_admin = pending_admin;
+        config.pending_admin_effective_at = Clock::get()?
+            .unix_timestamp
+            .checked_add(CONFIG_TIMELOCK_SECONDS)
+            .ok_or(FateError::ArithmeticOverflow)?;
+        emit!(AuthorityTransferProposed {
+            role: AuthorityRole::Config,
+            current_authority: config.admin,
+            pending_authority: pending_admin,
+            effective_at: config.pending_admin_effective_at,
+        });
         Ok(())
     }
 
@@ -185,8 +217,68 @@ pub mod fate_games {
             ctx.accounts.pending_admin.key(),
             FateError::InvalidAuthority
         );
+        require!(
+            config.pending_admin_effective_at > 0
+                && Clock::get()?.unix_timestamp >= config.pending_admin_effective_at,
+            FateError::AuthorityTimelockActive
+        );
+        let previous_authority = config.admin;
         config.admin = config.pending_admin;
         config.pending_admin = Pubkey::default();
+        config.pending_admin_effective_at = 0;
+        emit!(AuthorityTransferAccepted {
+            role: AuthorityRole::Config,
+            previous_authority,
+            authority: config.admin,
+        });
+        Ok(())
+    }
+
+    pub fn propose_pause_authority(
+        ctx: Context<AdminConfig>,
+        pending_authority: Pubkey,
+    ) -> Result<()> {
+        require!(
+            pending_authority != Pubkey::default()
+                && pending_authority != ctx.accounts.config.treasury,
+            FateError::InvalidAuthority
+        );
+        let config = &mut ctx.accounts.config;
+        config.pending_pause_authority = pending_authority;
+        config.pending_pause_effective_at = Clock::get()?
+            .unix_timestamp
+            .checked_add(CONFIG_TIMELOCK_SECONDS)
+            .ok_or(FateError::ArithmeticOverflow)?;
+        emit!(AuthorityTransferProposed {
+            role: AuthorityRole::Pause,
+            current_authority: config.pause_authority,
+            pending_authority,
+            effective_at: config.pending_pause_effective_at,
+        });
+        Ok(())
+    }
+
+    pub fn accept_pause_authority(ctx: Context<AcceptPauseAuthority>) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        require_keys_eq!(
+            config.pending_pause_authority,
+            ctx.accounts.pending_pause_authority.key(),
+            FateError::InvalidAuthority
+        );
+        require!(
+            config.pending_pause_effective_at > 0
+                && Clock::get()?.unix_timestamp >= config.pending_pause_effective_at,
+            FateError::AuthorityTimelockActive
+        );
+        let previous_authority = config.pause_authority;
+        config.pause_authority = config.pending_pause_authority;
+        config.pending_pause_authority = Pubkey::default();
+        config.pending_pause_effective_at = 0;
+        emit!(AuthorityTransferAccepted {
+            role: AuthorityRole::Pause,
+            previous_authority,
+            authority: config.pause_authority,
+        });
         Ok(())
     }
 
@@ -985,8 +1077,22 @@ pub struct AdminConfig<'info> {
 }
 
 #[derive(Accounts)]
+pub struct AuthorityConfig<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
 pub struct AcceptAdmin<'info> {
     pub pending_admin: Signer<'info>,
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
+pub struct AcceptPauseAuthority<'info> {
+    pub pending_pause_authority: Signer<'info>,
     #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
 }
@@ -1252,6 +1358,10 @@ pub struct FundDailyVault<'info> {
 pub struct Config {
     pub admin: Pubkey,
     pub pending_admin: Pubkey,
+    pub pending_admin_effective_at: i64,
+    pub pause_authority: Pubkey,
+    pub pending_pause_authority: Pubkey,
+    pub pending_pause_effective_at: i64,
     pub randomness_program: Pubkey,
     pub randomness_queue: Pubkey,
     pub treasury: Pubkey,
@@ -1269,7 +1379,7 @@ pub struct Config {
     pub bump: u8,
 }
 impl Config {
-    pub const SPACE: usize = 8 + 32 * 8 + 2 + 2 + 8 * 5 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 * 10 + 2 + 2 + 8 * 7 + 1 + 1;
 }
 
 #[account]
@@ -1412,6 +1522,11 @@ pub enum GameType {
     Coinflip,
     DailyCase,
 }
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum AuthorityRole {
+    Config,
+    Pause,
+}
 
 #[event]
 pub struct ConfigInitialized {
@@ -1419,10 +1534,25 @@ pub struct ConfigInitialized {
     pub randomness_program: Pubkey,
     pub randomness_queue: Pubkey,
     pub treasury: Pubkey,
+    pub pause_authority: Pubkey,
 }
 #[event]
 pub struct PauseChanged {
+    pub authority: Pubkey,
     pub paused: bool,
+}
+#[event]
+pub struct AuthorityTransferProposed {
+    pub role: AuthorityRole,
+    pub current_authority: Pubkey,
+    pub pending_authority: Pubkey,
+    pub effective_at: i64,
+}
+#[event]
+pub struct AuthorityTransferAccepted {
+    pub role: AuthorityRole,
+    pub previous_authority: Pubkey,
+    pub authority: Pubkey,
 }
 #[event]
 pub struct ConfigUpdated {
@@ -1603,6 +1733,8 @@ pub enum FateError {
     NoPendingConfigUpdate,
     #[msg("The configuration update timelock is still active.")]
     ConfigTimelockActive,
+    #[msg("The authority transfer timelock is still active.")]
+    AuthorityTimelockActive,
     #[msg("The game has not reached a terminal state.")]
     GameNotTerminal,
     #[msg("The game or vault still has outstanding liabilities.")]

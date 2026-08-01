@@ -1,0 +1,11 @@
+{
+  "network": "devnet",
+  "programId": "Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ",
+  "upgradeAuthority": "replace-with-squads-upgrade-vault",
+  "configAuthority": "replace-with-squads-config-vault",
+  "pauseAuthority": "replace-with-dedicated-pause-multisig-vault",
+  "treasury": "replace-with-dedicated-treasury-vault",
+  "deploymentIdentity": "replace-with-non-custodial-ci-identity",
+  "minimumThreshold": 3,
+  "memberCount": 5
+}

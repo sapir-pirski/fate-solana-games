@@ -61,6 +61,16 @@ test("economic configuration changes are delayed and observable", () => {
   assert.match(source, /ConfigUpdateCancelled/);
 });
 
+test("privileged roles are separated, delayed, and multisig compatible", () => {
+  assert.match(source, /pub pause_authority: Pubkey/);
+  assert.match(source, /pending_admin_effective_at/);
+  assert.match(source, /pending_pause_effective_at/);
+  assert.match(source, /AuthorityTransferProposed/);
+  assert.match(source, /AuthorityTransferAccepted/);
+  assert.match(source, /let expected = if paused[\s\S]*pause_authority[\s\S]*config\.admin/);
+  assert.match(programReadme, /Squads\s+vault PDAs/i);
+});
+
 test("accounts close only after games are terminal and liabilities are cleared", () => {
   assert.match(source, /pub fn close_jackpot/);
   assert.match(source, /pub fn close_coinflip/);

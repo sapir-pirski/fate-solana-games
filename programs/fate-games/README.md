@@ -14,7 +14,10 @@ for Jackpot, Coinflip, and Daily Case.
 - Incorrect winner and treasury accounts are rejected.
 - Timed-out Jackpot and Coinflip games have permissionless refund paths.
 - Timed-out Daily Case requests can be cleared by the player.
-- Administration uses a two-step authority transfer and emits configuration events.
+- Configuration and emergency-pause authorities are separate and support Squads
+  vault PDAs. Both authority rotations are two-step, delayed by 24 hours, and
+  emit proposal/acceptance events. The pause authority can pause only; the
+  configuration authority is required to unpause.
 - Treasury, randomness provider/queue, fees, and wager limits use a 24-hour
   propose/apply timelock; the administrator can cancel a pending update.
 - Pausing prevents new wagers and opens while preserving settlement/refund paths.
@@ -38,6 +41,10 @@ Configuration changes do not take effect immediately. An administrator proposes
 the complete replacement configuration, waits `CONFIG_TIMELOCK_SECONDS`, and then
 any caller may apply it. New proposals replace older pending proposals and every
 proposal, application, or cancellation emits an on-chain event.
+
+Program upgrade authority is controlled by the BPF loader rather than this
+program. It must be assigned to a different Squads vault from configuration,
+pause, treasury, and deployment identities. See `docs/MULTISIG_RUNBOOK.md`.
 
 ## Randomness boundary
 

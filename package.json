@@ -23,6 +23,7 @@
     "test:bundle": "npm run build && node scripts/check-bundle-budget.mjs",
     "security:audit": "npm audit --audit-level=low",
     "security:sbom": "cyclonedx-npm --package-lock-only --omit dev --output-reproducible --validate --output-format JSON --output-file -",
+    "security:authorities": "node scripts/verify-authority-separation.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "indexer": "tsx indexer/cli.ts run",

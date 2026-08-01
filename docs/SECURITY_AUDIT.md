@@ -18,9 +18,9 @@ Conclusion: suitable only for devnet engineering use; not approved for real-valu
 
 No qualified external Solana auditor has reviewed an immutable release commit. Internal review cannot satisfy independence. Keep mainnet disabled, obtain at least one independent review, remediate all critical/high findings and request a written retest.
 
-### FATE-SEC-002 — Upgrade and administrative authority not proven as multisig (High, open)
+### FATE-SEC-002 — Deployed authorities not yet proven as multisig (High, partially remediated)
 
-The program has a two-step configuration admin transfer and timelocked economic/VRF changes, but repository evidence does not prove that deployed program upgrade, configuration and treasury authorities are hardware-backed multisigs. Establish the authority inventory, move each production authority to a reviewed multisig, test recovery and record addresses in the release attestation.
+The program now separates configuration and pause authorities, restricts the pause role, delays both rotations, and provides a strict authority-manifest verifier and Squads runbook. Repository evidence still cannot prove that deployed program upgrade, configuration, pause and treasury authorities are hardware-backed multisigs. Execute and independently verify the migration, test recovery and record addresses in the release attestation.
 
 ### FATE-SEC-003 — Full validator adversarial/economic fuzz suite incomplete (High, open)
 
