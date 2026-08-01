@@ -38,6 +38,8 @@ import { createCoinflipTransaction, enterJackpotTransaction, solToLamports } fro
 import { getPublicConfig, requireFateProgramId } from "@/lib/config/client";
 import { AnimatedNumber, Mark, SolIcon, Stat } from "@/components/ui/GamePrimitives";
 import { jackpotChance } from "@/features/jackpot/model";
+import FateCopilot from "@/app/ai/FateCopilot";
+import ComplianceCenter from "@/app/compliance/ComplianceCenter";
 
 type View = "jackpot" | "coinflip" | "daily" | "history";
 type CoinSide = "Heads" | "Tails";
@@ -55,13 +57,8 @@ const GameCoin3D = lazy(() => import("@/components/three/GameCoin3D"));
 const DailyCase3D = lazy(() => import("@/components/three/DailyCase3D"));
 const JackpotVault3D = lazy(() => import("@/components/three/JackpotVault3D"));
 const SpatialBackground3D = lazy(() => import("@/components/three/SpatialBackground3D"));
-const LazyFateCopilot = lazy(() => import("@/app/ai/FateCopilot"));
-const LazyComplianceCenter = lazy(() => import("@/app/compliance/ComplianceCenter"));
+const LazyComplianceCenter = ComplianceCenter;
 const PROGRAM_CONFIGURED = Boolean(getPublicConfig().fateProgramId);
-
-function FateCopilot({ walletAddress }: { walletAddress: string | null }) {
-  return <Suspense fallback={null}><LazyFateCopilot walletAddress={walletAddress}/></Suspense>;
-}
 
 const subscribeHydration = () => () => {};
 function useHydrated() {
@@ -174,8 +171,8 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
         <div className="entry-label"><span>Your entry</span><span>Available: {connected && wallet.balance !== null ? wallet.balance.toFixed(3) : "—"} SOL</span></div>
         <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Jackpot entry amount in SOL"/><span aria-hidden="true">SOL</span><button type="button" onClick={() => setAmount(connected ? "24.82" : "1.00")}>MAX</button></div>
         <div className="presets">{["0.10", "0.25", "0.50", "1.00"].map(v => <button className={amount === v ? "selected" : ""} key={v} onClick={() => setAmount(v)}>{v}</button>)}</div>
-        <button className="primary" disabled={submitting || !round} onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
-        <div className="fee-note"><ShieldCheck size={14} /> Secured by Solana <span>•</span> 3% winner fee</div>
+        <button className="primary" disabled={submitting} aria-describedby="jackpot-action-hint" onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
+        <div className="fee-note" id="jackpot-action-hint"><ShieldCheck size={14} /> {!connected ? "Opens the wallet connection popup" : !round ? "No open round is currently indexed" : "Secured by Solana · 3% winner fee"}</div>
       </div>
 
       <div className="card live-card">
@@ -187,7 +184,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
 
     <section className="bottom-grid">
       <Fairness />
-      <div className="previous card"><div className="card-title"><div><Trophy size={18}/><strong>Previous winner</strong></div><span>Round #1,294</span></div><div className="winner"><div className="winner-mark">7c</div><div><strong>7cXq...2Kp9</strong><span>Won with a 6.8% chance</span></div><b><SolIcon /> 12.84 SOL</b></div><button className="text-link">View transaction <ExternalLink size={14}/></button></div>
+      <div className="previous card"><div className="card-title"><div><Trophy size={18}/><strong>Previous winner</strong></div><span>Preview only</span></div><div className="winner"><div className="winner-mark">7c</div><div><strong>7cXq...2Kp9</strong><span>Example result · not indexed</span></div><b><SolIcon /> 12.84 SOL</b></div><span className="text-link unavailable" title="A transaction link appears after a finalized result is indexed">Transaction unavailable <ShieldCheck size={14}/></span></div>
     </section>
   </motion.main>;
 }

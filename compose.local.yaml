@@ -6,7 +6,11 @@ services:
       context: .
       dockerfile: Dockerfile
     image: fate-platform:local
+    init: true
     restart: unless-stopped
+    stop_grace_period: 30s
+    cpus: 2.0
+    mem_limit: 1g
     environment:
       APP_REVISION: local-compose
       PORT: "3000"
@@ -87,6 +91,8 @@ services:
   grafana:
     image: grafana/grafana:12.3.1
     restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 768m
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in local.env}
