@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { ensureAuthSchema, getDatabaseBackend } from "../../../db";
+import { ensureAiSchema, ensureAuthSchema, ensureGameSchema, getDatabaseBackend } from "../../../db";
 import { renderMetrics } from "../../../lib/telemetry";
 
 const label = (value: unknown) => String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n");
@@ -9,12 +9,17 @@ export async function GET() {
   const network = process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet";
   const dynamic: string[] = [];
   try {
-    await ensureAuthSchema();
-    const [operations, jobs, sessions, cache] = await Promise.all([
+    await Promise.all([ensureAuthSchema(), ensureAiSchema(), ensureGameSchema()]);
+    const [operations, jobs, sessions, cache, aiUsage, aiTools, aiFeedback, aiConversations, gameActivity] = await Promise.all([
       env.DB.prepare("SELECT status,COUNT(*) count FROM transaction_operations GROUP BY status").all<{ status: string; count: number }>(),
       env.DB.prepare("SELECT queue,status,COUNT(*) count,MAX(0,CAST(strftime('%s','now') AS INTEGER)-MIN(available_at)) oldest FROM background_jobs GROUP BY queue,status").all<{ queue: string; status: string; count: number; oldest: number }>(),
       env.DB.prepare("SELECT COUNT(*) sessions FROM wallet_sessions WHERE revoked_at IS NULL AND expires_at>CAST(strftime('%s','now') AS INTEGER)").first<{ sessions: number }>(),
       env.DB.prepare("SELECT COUNT(*) cache_total,SUM(CASE WHEN expires_at>CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END) cache_live FROM response_cache").first<{ cache_total: number; cache_live: number | null }>(),
+      env.DB.prepare("SELECT model,SUM(input_tokens) input_tokens,SUM(output_tokens) output_tokens,SUM(reasoning_tokens) reasoning_tokens,SUM(cached_tokens) cached_tokens FROM ai_usage GROUP BY model").all<{ model: string; input_tokens: number; output_tokens: number; reasoning_tokens: number; cached_tokens: number }>(),
+      env.DB.prepare("SELECT tool_name,status,COUNT(*) count,COALESCE(AVG(duration_ms),0) average_duration_ms FROM ai_tool_calls GROUP BY tool_name,status").all<{ tool_name: string; status: string; count: number; average_duration_ms: number }>(),
+      env.DB.prepare("SELECT rating,COUNT(*) count FROM ai_feedback GROUP BY rating").all<{ rating: number; count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) count FROM ai_conversations").first<{ count: number }>(),
+      env.DB.prepare("SELECT game_type,state,COUNT(*) count,SUM(wager_lamports) wager_lamports,SUM(payout_lamports) payout_lamports,SUM(fee_lamports) fee_lamports FROM games GROUP BY game_type,state").all<{ game_type: string; state: string; count: number; wager_lamports: number; payout_lamports: number; fee_lamports: number }>(),
     ]);
     for (const row of operations.results) dynamic.push(`fate_transaction_operations{status="${label(row.status)}"} ${row.count}`);
     for (const row of jobs.results) {
@@ -23,6 +28,33 @@ export async function GET() {
     }
     dynamic.push(`fate_active_sessions ${sessions?.sessions ?? 0}`);
     dynamic.push(`fate_cache_entries{state="live"} ${cache?.cache_live ?? 0}`, `fate_cache_entries{state="total"} ${cache?.cache_total ?? 0}`);
+    const inputPrice = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25);
+    const outputPrice = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
+    let estimatedCost = 0;
+    for (const row of aiUsage.results) {
+      const model = label(row.model);
+      dynamic.push(`fate_ai_tokens{model="${model}",type="input"} ${row.input_tokens ?? 0}`);
+      dynamic.push(`fate_ai_tokens{model="${model}",type="output"} ${row.output_tokens ?? 0}`);
+      dynamic.push(`fate_ai_tokens{model="${model}",type="reasoning"} ${row.reasoning_tokens ?? 0}`);
+      dynamic.push(`fate_ai_tokens{model="${model}",type="cached"} ${row.cached_tokens ?? 0}`);
+      estimatedCost += (row.input_tokens ?? 0) * inputPrice / 1_000_000 + (row.output_tokens ?? 0) * outputPrice / 1_000_000;
+    }
+    for (const row of aiTools.results) {
+      dynamic.push(`fate_ai_tool_calls{tool="${label(row.tool_name)}",status="${label(row.status)}"} ${row.count}`);
+      dynamic.push(`fate_ai_tool_duration_ms{tool="${label(row.tool_name)}",status="${label(row.status)}"} ${row.average_duration_ms}`);
+    }
+    for (const row of aiFeedback.results) dynamic.push(`fate_ai_feedback{rating="${row.rating > 0 ? "positive" : "negative"}"} ${row.count}`);
+    dynamic.push(`fate_ai_conversations ${aiConversations?.count ?? 0}`);
+    dynamic.push(`fate_ai_estimated_cost_usd ${estimatedCost}`);
+    dynamic.push(`fate_ai_monthly_budget_usd ${Math.max(0, Number(process.env.AI_MONTHLY_BUDGET_USD ?? 25))}`);
+    dynamic.push(`fate_ai_configured ${process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith("replace-") ? 1 : 0}`);
+    for (const row of gameActivity.results) {
+      const gameType = label(row.game_type), state = label(row.state);
+      dynamic.push(`fate_games{game_type="${gameType}",state="${state}"} ${row.count}`);
+      dynamic.push(`fate_game_lamports{game_type="${gameType}",state="${state}",kind="wager"} ${row.wager_lamports ?? 0}`);
+      dynamic.push(`fate_game_lamports{game_type="${gameType}",state="${state}",kind="payout"} ${row.payout_lamports ?? 0}`);
+      dynamic.push(`fate_game_lamports{game_type="${gameType}",state="${state}",kind="fee"} ${row.fee_lamports ?? 0}`);
+    }
     dynamic.push("fate_database_metrics_available 1");
   } catch {
     dynamic.push("fate_database_metrics_available 0");

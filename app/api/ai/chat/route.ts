@@ -81,10 +81,10 @@ async function handlePost(request: Request) {
     const usage = response.usage;
     await getDb().insert(aiUsage).values({ id: crypto.randomUUID(), conversationId, walletHash: rateKey, model, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0, reasoningTokens: usage?.output_tokens_details?.reasoning_tokens ?? 0, cachedTokens: usage?.input_tokens_details?.cached_tokens ?? 0 });
     increment("fate_ai_requests_total", { status: "success", model }); observe("fate_ai_provider_duration_ms", Date.now() - providerStarted, { model });
-    jsonLog("info", "ai_chat_complete", "AI response completed", { requestId, model, toolRounds, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0 });
+    jsonLog("info", "ai_chat_complete", "AI response completed", { component: "ai", requestId, model, toolRounds, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0 });
     return streamAnswer(answer, { requestId, conversationId, messageId: assistantId, model, toolRounds });
   } catch (error) {
-    increment("fate_ai_requests_total", { status: "failure" }); jsonLog("error", "ai_chat_failed", "AI response failed", { requestId, errorCode: redactError(error) });
+    increment("fate_ai_requests_total", { status: "failure" }); jsonLog("error", "ai_chat_failed", "AI response failed", { component: "ai", requestId, errorCode: redactError(error) });
     return Response.json({ code: "AI_UNAVAILABLE", requestId }, { status: 503, headers: { "retry-after": "5" } });
   }
 }

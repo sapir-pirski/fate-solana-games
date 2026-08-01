@@ -4,6 +4,8 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "links": [
+    { "title": "FATE Overview", "type": "link", "url": "/d/fate-operations", "targetBlank": false },
+    { "title": "FATE AI / LLM", "type": "link", "url": "/d/fate-ai", "targetBlank": false },
     { "title": "Open logs in Explore", "type": "link", "url": "/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22expr%22:%22%7Bstack=%5C%22fate-local%5C%22%7D%22%7D%5D%7D", "targetBlank": false }
   ],
   "panels": [
@@ -14,7 +16,7 @@
       "description": "Average scrape availability across the selected services and dashboard time range.",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "avg(avg_over_time(up{job=~\"$service\"}[$__range])) * 100", "instant": true, "refId": "A" }],
+      "targets": [{ "expr": "avg(avg_over_time(up{job=~\"$service\"}[$__range])) * 100 or vector(0)", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "min": 0, "max": 100, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 95 }, { "color": "green", "value": 99.5 }] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
     },
@@ -44,7 +46,7 @@
       "title": "Mean request latency",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum(rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum(rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)", "refId": "A" }],
+      "targets": [{ "expr": "(sum(rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum(rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)) or vector(0)", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 500 }, { "color": "red", "value": 1500 }] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
     },
@@ -66,8 +68,8 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "sum(rate(fate_span_duration_ms_count[$__rate_interval]))", "legendFormat": "requests/s", "refId": "A" },
-        { "expr": "sum(rate(fate_errors_total[$__rate_interval]))", "legendFormat": "errors/s", "refId": "B" }
+        { "expr": "sum(rate(fate_span_duration_ms_count[$__rate_interval])) or vector(0)", "legendFormat": "requests/s", "refId": "A" },
+        { "expr": "sum(rate(fate_errors_total[$__rate_interval])) or vector(0)", "legendFormat": "errors/s", "refId": "B" }
       ],
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 18, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": { "group": "A", "mode": "none" } } }, "overrides": [{ "matcher": { "id": "byName", "options": "errors/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }] },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -79,7 +81,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "sum by (span) (rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum by (span) (rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)", "legendFormat": "{{span}}", "refId": "A" }
+        { "expr": "(sum by (span) (rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum by (span) (rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)) or vector(0)", "legendFormat": "{{span}}", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": { "group": "A", "mode": "none" } } }, "overrides": [] },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -90,7 +92,7 @@
       "title": "Transaction operations by state",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "fate_transaction_operations", "legendFormat": "{{status}}", "refId": "A" }],
+      "targets": [{ "expr": "fate_transaction_operations or vector(0)", "legendFormat": "{{status}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
       "options": { "barRadius": 0, "barWidth": 0.8, "fullHighlight": false, "groupWidth": 0.7, "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "orientation": "auto", "showValue": "auto", "stacking": "normal", "tooltip": { "mode": "multi", "sort": "desc" }, "xTickLabelRotation": 0, "xTickLabelSpacing": 0 }
     },
@@ -101,8 +103,8 @@
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "fate_database_operation_duration_ms_sum{backend=\"d1\"} / clamp_min(fate_database_operation_duration_ms_count{backend=\"d1\"}, 1)", "legendFormat": "D1 average", "refId": "A" },
-        { "expr": "fate_solana_rpc_latency_ms", "legendFormat": "RPC latency", "refId": "B" }
+        { "expr": "fate_database_operation_duration_ms_sum{backend=\"d1\"} / clamp_min(fate_database_operation_duration_ms_count{backend=\"d1\"}, 1) or vector(0)", "legendFormat": "D1 average", "refId": "A" },
+        { "expr": "fate_solana_rpc_latency_ms or vector(0)", "legendFormat": "RPC latency", "refId": "B" }
       ],
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byName", "options": "RPC latency" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
@@ -114,9 +116,9 @@
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "fate_database_metrics_available", "legendFormat": "D1 available", "refId": "A" },
-        { "expr": "fate:transaction_stuck:count", "legendFormat": "Pending confirmations", "refId": "B" },
-        { "expr": "fate_active_sessions", "legendFormat": "Active sessions", "refId": "C" }
+        { "expr": "fate_database_metrics_available or vector(0)", "legendFormat": "D1 available", "refId": "A" },
+        { "expr": "fate:transaction_stuck:count or vector(0)", "legendFormat": "Pending confirmations", "refId": "B" },
+        { "expr": "fate_active_sessions or vector(0)", "legendFormat": "Active sessions", "refId": "C" }
       ],
       "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } }, "overrides": [] },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
@@ -159,7 +161,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": { "refresh_intervals": ["5s", "10s", "15s", "30s", "1m", "5m"], "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"] },
   "timezone": "browser",
-  "title": "FATE platform health and logs",
+  "title": "FATE Diagnostics",
   "uid": "fate-local",
-  "version": 2
+  "version": 3
 }
