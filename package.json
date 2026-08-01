@@ -35,7 +35,6 @@
     "test:indexer:integration": "tsx --test tests/indexer-store.integration.ts"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1",
     "@react-three/fiber": "^9.7.0",
     "@solana/wallet-standard-features": "^1.4.0",
     "@solana/web3.js": "^1.98.4",
@@ -52,8 +51,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.185.1",
-    "wrangler": "^4.118.0",
-    "zod": "^4.4.3"
+    "wrangler": "^4.118.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

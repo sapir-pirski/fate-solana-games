@@ -41,11 +41,7 @@ case "${1:-help}" in
       "http://127.0.0.1:${port}/api/health"
     printf '\n'
     ;;
-  ai-up)
-    require_env
-    "${COMPOSE[@]}" --profile ai up -d ollama
-    ;;
   *)
-    echo "Usage: $0 {up|down|status|logs [service]|health|ai-up}"
+    echo "Usage: $0 {up|down|status|logs [service]|health}"
     ;;
 esac

@@ -197,16 +197,6 @@ services:
     depends_on: [prometheus, loki, tempo]
     networks: [frontend, observability]
 
-  ollama:
-    image: ollama/ollama:0.13.4
-    profiles: [ai]
-    restart: unless-stopped
-    ports:
-      - 127.0.0.1:11434:11434
-    volumes:
-      - ollama_data:/root/.ollama
-    networks: [frontend, backend]
-
 networks:
   frontend: {}
   backend:
@@ -222,4 +212,3 @@ volumes:
   tempo_data: {}
   alloy_data: {}
   grafana_data: {}
-  ollama_data: {}

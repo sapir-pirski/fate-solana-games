@@ -1,7 +1,7 @@
-import { and, eq, gt, lt, or, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { backgroundJobs, distributedLeases, rateLimitBuckets, responseCache } from "../db/schema";
-import { nowSeconds, randomToken, sha256 } from "./auth";
+import { backgroundJobs, rateLimitBuckets } from "../db/schema";
+import { nowSeconds, sha256 } from "./auth";
 import { increment } from "./telemetry";
 
 export async function enforceRateLimit(input:{scope:string;subject:string;limit:number;windowSeconds:number}){
@@ -16,10 +16,3 @@ export function rateLimitResponse(limit:Awaited<ReturnType<typeof enforceRateLim
 export async function enqueueJob(input:{queue:string;dedupeKey:string;payload:unknown;delaySeconds?:number;maxAttempts?:number}){
   const now=nowSeconds(),id=crypto.randomUUID();const [job]=await getDb().insert(backgroundJobs).values({id,queue:input.queue,dedupeKey:input.dedupeKey,payloadJson:JSON.stringify(input.payload),availableAt:now+(input.delaySeconds??0),maxAttempts:input.maxAttempts??8}).onConflictDoUpdate({target:[backgroundJobs.queue,backgroundJobs.dedupeKey],set:{payloadJson:JSON.stringify(input.payload),status:"pending",availableAt:now+(input.delaySeconds??0),updatedAt:new Date().toISOString()}}).returning();increment("fate_jobs_enqueued_total",{queue:input.queue});return job;
 }
-
-export async function acquireLease(name:string,owner:string,ttlSeconds=30){const now=nowSeconds(),token=randomToken();const [lease]=await getDb().insert(distributedLeases).values({name,owner,tokenHash:sha256(token),expiresAt:now+ttlSeconds}).onConflictDoUpdate({target:distributedLeases.name,set:{owner,tokenHash:sha256(token),expiresAt:now+ttlSeconds,updatedAt:new Date().toISOString()},where:or(lt(distributedLeases.expiresAt,now),eq(distributedLeases.owner,owner))}).returning();return lease?.owner===owner?{token,expiresAt:lease.expiresAt}:null;}
-export async function renewLease(name:string,owner:string,token:string,ttlSeconds=30){const now=nowSeconds();const rows=await getDb().update(distributedLeases).set({expiresAt:now+ttlSeconds,updatedAt:new Date().toISOString()}).where(and(eq(distributedLeases.name,name),eq(distributedLeases.owner,owner),eq(distributedLeases.tokenHash,sha256(token)),gt(distributedLeases.expiresAt,now))).returning();return rows.length===1;}
-export async function releaseLease(name:string,owner:string,token:string){await getDb().delete(distributedLeases).where(and(eq(distributedLeases.name,name),eq(distributedLeases.owner,owner),eq(distributedLeases.tokenHash,sha256(token))));}
-
-export async function cacheGet<T>(key:string){const [row]=await getDb().select().from(responseCache).where(and(eq(responseCache.key,key),gt(responseCache.expiresAt,nowSeconds()))).limit(1);if(!row)return null;try{return JSON.parse(row.valueJson) as T;}catch{return null;}}
-export async function cacheSet(key:string,value:unknown,ttlSeconds:number){await getDb().insert(responseCache).values({key,valueJson:JSON.stringify(value),expiresAt:nowSeconds()+ttlSeconds,updatedAt:new Date().toISOString()}).onConflictDoUpdate({target:responseCache.key,set:{valueJson:JSON.stringify(value),expiresAt:nowSeconds()+ttlSeconds,updatedAt:new Date().toISOString()}});}

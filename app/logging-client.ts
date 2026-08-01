@@ -142,7 +142,7 @@ export function logEvent(input: LogInput) {
   void addToQueue(event).then(() => flushLogs());
 }
 
-export function flushLogs() {
+function flushLogs() {
   if (flushPromise || (typeof navigator !== "undefined" && !navigator.onLine)) return flushPromise ?? Promise.resolve();
   flushPromise = (async () => {
     const events = await readyEvents();

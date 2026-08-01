@@ -198,17 +198,9 @@ export const aiFeedback = sqliteTable("ai_feedback", {
   id: text("id").primaryKey(), messageId: text("message_id").notNull(), walletHash: text("wallet_hash"), rating: integer("rating").notNull(), reason: text("reason"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, table => [uniqueIndex("ai_feedback_message_wallet_uidx").on(table.messageId, table.walletHash)]);
 
-export const aiEvaluations = sqliteTable("ai_evaluations", {
-  id: text("id").primaryKey(), runId: text("run_id").notNull(), evaluator: text("evaluator").notNull(), score: integer("score").notNull(), detailsJson: text("details_json").notNull().default("{}"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table => [index("ai_evaluations_run_idx").on(table.runId)]);
-
 export const agentRuns = sqliteTable("agent_runs", {
   id: text("id").primaryKey(), agentType: text("agent_type").notNull(), walletAddress: text("wallet_address"), status: text("status").notNull(), inputJson: text("input_json").notNull(), outputJson: text("output_json"), errorCode: text("error_code"), startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text("completed_at"),
 }, table => [index("agent_runs_type_status_idx").on(table.agentType, table.status, table.startedAt)]);
-
-export const agentCheckpoints = sqliteTable("agent_checkpoints", {
-  id: text("id").primaryKey(), runId: text("run_id").notNull(), step: text("step").notNull(), stateJson: text("state_json").notNull(), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table => [index("agent_checkpoints_run_idx").on(table.runId, table.createdAt)]);
 
 export const agentAlerts = sqliteTable("agent_alerts", {
   id: text("id").primaryKey(), alertType: text("alert_type").notNull(), severity: text("severity").notNull(), status: text("status").notNull().default("open"), subject: text("subject").notNull(), evidenceJson: text("evidence_json").notNull(), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), resolvedAt: text("resolved_at"),

@@ -104,7 +104,7 @@ localhost. The stack uses persistent Docker volumes and devnet-only application
 settings. It never imports production secrets or production game state.
 
 Use `./scripts/local-platform.sh status`, `health`, `logs`, and `down` to operate
-the stack. `./scripts/local-platform.sh ai-up` starts optional Ollama separately.
+the stack.
 
 ## Test matrix
 
