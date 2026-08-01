@@ -1,18 +1,15 @@
 type Attributes=Record<string,string|number|boolean|undefined|null>;
-type Registry={counters:Map<string,number>;sums:Map<string,number>;counts:Map<string,number>;buckets:Map<string,number>};
+type Registry={counters:Map<string,number>;sums:Map<string,number>;counts:Map<string,number>};
 const globalRegistry=globalThis as typeof globalThis&{__fateTelemetry?:Registry};
-const registry=globalRegistry.__fateTelemetry??={counters:new Map(),sums:new Map(),counts:new Map(),buckets:new Map()};
-registry.buckets??=new Map();
-const durationBuckets=[5,10,25,50,100,250,500,1000,2500,5000,10000,30000];
+const registry=globalRegistry.__fateTelemetry??={counters:new Map(),sums:new Map(),counts:new Map()};
 const forbidden=/wallet|signature|token|secret|private|signed|authorization|cookie|operation.?id|ip|error.?message/i;
 const clean=(attributes:Attributes)=>Object.fromEntries(Object.entries(attributes).filter(([key,value])=>!forbidden.test(key)&&value!==undefined&&value!==null).map(([key,value])=>[key,String(value).slice(0,120)]));
 const labels=(attributes:Attributes)=>{const values=clean(attributes);const keys=Object.keys(values).sort();return keys.length?`{${keys.map(key=>`${key}="${values[key]!.replaceAll("\\","\\\\").replaceAll('"','\\"')}"`).join(",")}}`:"";};
 const metricKey=(name:string,attributes:Attributes)=>`${name}${labels(attributes)}`;
 export function increment(name:string,attributes:Attributes={},value=1){const key=metricKey(name,attributes);registry.counters.set(key,(registry.counters.get(key)??0)+value);}
-const bucketKey=(name:string,attributes:Attributes,le:number|string)=>metricKey(`${name}_bucket`,{...attributes,le});
-export function observe(name:string,value:number,attributes:Attributes={}){const key=metricKey(name,attributes);registry.sums.set(key,(registry.sums.get(key)??0)+value);registry.counts.set(key,(registry.counts.get(key)??0)+1);for(const boundary of durationBuckets)if(value<=boundary){const bucket=bucketKey(name,attributes,boundary);registry.buckets.set(bucket,(registry.buckets.get(bucket)??0)+1);}const infinity=bucketKey(name,attributes,"+Inf");registry.buckets.set(infinity,(registry.buckets.get(infinity)??0)+1);}
+export function observe(name:string,value:number,attributes:Attributes={}){const key=metricKey(name,attributes);registry.sums.set(key,(registry.sums.get(key)??0)+value);registry.counts.set(key,(registry.counts.get(key)??0)+1);}
 const suffix=(key:string,value:string)=>key.includes("{")?key.replace("{",`${value}{`):`${key}${value}`;
-export function renderMetrics(){const lines:string[]=[];for(const [key,value] of registry.counters)lines.push(`${key} ${value}`);for(const [key,value] of registry.sums)lines.push(`${suffix(key,"_sum")} ${value}`);for(const [key,value] of registry.counts)lines.push(`${suffix(key,"_count")} ${value}`);for(const [key,value] of registry.buckets)lines.push(`${key} ${value}`);return lines.join("\n");}
+export function renderMetrics(){const lines:string[]=[];for(const [key,value] of registry.counters)lines.push(`${key} ${value}`);for(const [key,value] of registry.sums)lines.push(`${suffix(key,"_sum")} ${value}`);for(const [key,value] of registry.counts)lines.push(`${suffix(key,"_count")} ${value}`);return lines.join("\n");}
 export function jsonLog(level:"debug"|"info"|"warn"|"error",event:string,message:string,attributes:Attributes={}){console[level==="debug"?"log":level](JSON.stringify({timestamp:new Date().toISOString(),level,event,message,service:process.env.OTEL_SERVICE_NAME??"fate-platform",environment:process.env.NODE_ENV??"development",version:process.env.APP_REVISION??"local",...clean(attributes),schemaVersion:1}));}
 const hex=(size:number)=>Array.from(crypto.getRandomValues(new Uint8Array(size)),byte=>byte.toString(16).padStart(2,"0")).join("");
 function parentContext(traceparent?:string|null){const match=traceparent?.match(/^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/i);return match?{traceId:match[1],parentSpanId:match[2]}:{traceId:hex(16),parentSpanId:undefined};}
