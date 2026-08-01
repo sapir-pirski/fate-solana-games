@@ -1,4 +1,5 @@
 import { PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { Buffer } from "buffer";
 
 const CONFIG_SEED = Buffer.from("config"); const JACKPOT_SEED = Buffer.from("jackpot"); const JACKPOT_VAULT_SEED = Buffer.from("jackpot-vault");
 const COINFLIP_SEED = Buffer.from("coinflip"); const COINFLIP_VAULT_SEED = Buffer.from("coinflip-vault"); const DAILY_SEED = Buffer.from("daily");
