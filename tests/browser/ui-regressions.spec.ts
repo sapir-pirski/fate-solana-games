@@ -22,6 +22,8 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(presets.getByRole("button", { name: "0.10" })).toHaveAttribute("aria-pressed", "true");
   await presets.getByRole("button", { name: "1.00" }).click();
   await expect(presets.getByRole("button", { name: "1.00" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("No round indexed", { exact: true })).toBeVisible();
+  await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: /Connect wallet to enter/ }).click();
   const walletDialog = page.getByRole("dialog", { name: "Connect a wallet" });

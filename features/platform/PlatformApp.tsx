@@ -176,7 +176,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
       </div>
 
       <div className="card live-card">
-        <div className="card-title"><div><Flame size={18} /><strong>On-chain round</strong></div><span className="demo-state">FINALIZED</span></div>
+        <div className="card-title"><div><Flame size={18} /><strong>On-chain round</strong></div><span className="demo-state">{round ? "OPEN" : loading ? "SYNCING" : error ? "UNAVAILABLE" : "WAITING"}</span></div>
         <div className="entries"><div className="entry"><div className="avatar">◎</div><div><strong>{round ? short(round.address) : "No round indexed"}</strong><span>{error ?? (round ? `Slot ${round.last_slot}` : "Waiting for an open round")}</span></div>{round&&<b><SolIcon/> {pot.toFixed(2)}</b>}</div></div>
         {round&&<div className="whale"><Crown size={17}/><span>Program account</span><strong>{short(round.address)}</strong><b>OPEN</b></div>}
       </div>
