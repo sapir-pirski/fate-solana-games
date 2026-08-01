@@ -35,7 +35,11 @@ test("floating controls stay compact and collision-free", async ({ page }) => {
   await expect(compliance).toBeVisible({ timeout: 15_000 });
   const copilotBox = await copilot.boundingBox();
   const complianceBox = await compliance.boundingBox();
+  await expect(copilot).toHaveCSS("position", "fixed");
+  await expect(compliance).toHaveCSS("position", "fixed");
   expect(copilotBox && copilotBox.width <= 50).toBeTruthy();
+  expect(copilotBox && copilotBox.x >= 0 && copilotBox.x + copilotBox.width <= 1280).toBeTruthy();
+  expect(complianceBox && complianceBox.x >= 0 && complianceBox.x + complianceBox.width <= 1280).toBeTruthy();
   const overlap = copilotBox && complianceBox
     ? !(copilotBox.x + copilotBox.width <= complianceBox.x || complianceBox.x + complianceBox.width <= copilotBox.x || copilotBox.y + copilotBox.height <= complianceBox.y || complianceBox.y + complianceBox.height <= copilotBox.y)
     : true;
