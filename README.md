@@ -83,7 +83,7 @@ recovery testing, copy `local.env.example` to `local.env`, replace every
 ```
 
 This starts the application on `http://localhost:3100`, PostgreSQL on port 55432,
-Redis on port 56379, Prometheus on `http://localhost:9090`, Grafana on
+the PostgreSQL-backed coordination worker, Prometheus on `http://localhost:9090`, Grafana on
 `http://localhost:3001`, and Loki on port 3101. All published ports bind only to
 localhost. The stack uses persistent Docker volumes and devnet-only application
 settings. It never imports production secrets or production game state.

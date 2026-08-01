@@ -38,3 +38,4 @@ export async function verifyWalletSignature(wallet: string, message: string, sig
 export function requireSameOrigin(request: Request) {
   const origin=request.headers.get("origin"); if(!origin)return true; return origin===new URL(request.url).origin;
 }
+export function anonymousRequestSubject(request:Request){return request.headers.get("cf-connecting-ip")??request.headers.get("x-real-ip")??"anonymous";}

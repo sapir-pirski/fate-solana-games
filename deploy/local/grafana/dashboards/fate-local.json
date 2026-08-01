@@ -18,7 +18,7 @@
       "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
       "id": 2,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
-      "targets": [{ "expr": "up{job=~\"fate-app|postgres|redis\"}", "legendFormat": "{{job}}", "refId": "A" }],
+      "targets": [{ "expr": "up{job=~\"fate-app|postgres|fate-indexer\"}", "legendFormat": "{{job}}", "refId": "A" }],
       "title": "Service availability",
       "type": "timeseries"
     },

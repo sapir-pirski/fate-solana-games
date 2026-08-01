@@ -145,6 +145,26 @@ export const transactionOperations = sqliteTable("transaction_operations", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, table => [uniqueIndex("transaction_operations_operation_uidx").on(table.operationId), uniqueIndex("transaction_operations_signature_uidx").on(table.signature), index("transaction_operations_wallet_status_idx").on(table.walletAddress, table.status)]);
 
+export const rateLimitBuckets = sqliteTable("rate_limit_buckets", {
+  key: text("key").primaryKey(), scope: text("scope").notNull(), subjectHash: text("subject_hash").notNull(),
+  windowStart: integer("window_start").notNull(), count: integer("count").notNull().default(1), expiresAt: integer("expires_at").notNull(),
+}, table => [index("rate_limit_buckets_expiry_idx").on(table.expiresAt)]);
+
+export const backgroundJobs = sqliteTable("background_jobs", {
+  id: text("id").primaryKey(), queue: text("queue").notNull(), dedupeKey: text("dedupe_key").notNull(), payloadJson: text("payload_json").notNull(),
+  status: text("status").notNull().default("pending"), attempts: integer("attempts").notNull().default(0), maxAttempts: integer("max_attempts").notNull().default(8),
+  availableAt: integer("available_at").notNull(), leaseOwner: text("lease_owner"), leaseExpiresAt: integer("lease_expires_at"), lastError: text("last_error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [uniqueIndex("background_jobs_dedupe_uidx").on(table.queue,table.dedupeKey),index("background_jobs_claim_idx").on(table.queue,table.status,table.availableAt)]);
+
+export const distributedLeases = sqliteTable("distributed_leases", {
+  name: text("name").primaryKey(), owner: text("owner").notNull(), tokenHash: text("token_hash").notNull(), expiresAt: integer("expires_at").notNull(), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const responseCache = sqliteTable("response_cache", {
+  key: text("key").primaryKey(), valueJson: text("value_json").notNull(), expiresAt: integer("expires_at").notNull(), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table=>[index("response_cache_expiry_idx").on(table.expiresAt)]);
+
 export const indexerCheckpoints = sqliteTable("indexer_checkpoints", {
   consumer: text("consumer").primaryKey(),
   lastSignature: text("last_signature"),

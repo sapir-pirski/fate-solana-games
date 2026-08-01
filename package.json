@@ -16,6 +16,7 @@
     "indexer:once": "tsx indexer/cli.ts once",
     "indexer:rebuild": "tsx indexer/cli.ts rebuild",
     "indexer:retry": "tsx indexer/cli.ts retry-failures",
+    "worker:coordination": "tsx worker/coordination-worker.ts",
     "test:indexer:integration": "tsx --test tests/indexer-store.integration.ts"
   },
   "dependencies": {

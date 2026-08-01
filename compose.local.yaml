@@ -89,32 +89,26 @@ services:
     labels:
       fate.local.component: indexer
 
-  redis:
-    image: redis:7.4-alpine
+  coordination-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fate-platform:local
     restart: unless-stopped
-    command: [redis-server, --appendonly, "yes", --save, "60", "1"]
-    ports:
-      - 127.0.0.1:${REDIS_PORT:-6380}:6379
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: [CMD, redis-cli, ping]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks: [frontend, backend, observability]
-    labels:
-      fate.local.component: redis
-
-  redis-exporter:
-    image: oliver006/redis_exporter:v1.80.2
-    restart: unless-stopped
+    command: [node_modules/.bin/tsx, worker/coordination-worker.ts]
     environment:
-      REDIS_ADDR: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fate_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local.env}@postgres:5432/${POSTGRES_DB:-fate}
+      DATABASE_SSL: disable
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.devnet.solana.com}
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
-    networks: [observability, backend]
+    healthcheck:
+      disable: true
+    networks: [backend, observability]
+    labels:
+      fate.local.component: coordination-worker
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.18.1
@@ -139,7 +133,7 @@ services:
     volumes:
       - ./deploy/local/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
-    depends_on: [app, redis-exporter, postgres-exporter]
+    depends_on: [app, postgres-exporter]
     networks: [frontend, observability]
 
   loki:
@@ -201,7 +195,6 @@ networks:
 volumes:
   app_state: {}
   postgres_data: {}
-  redis_data: {}
   prometheus_data: {}
   loki_data: {}
   alloy_data: {}

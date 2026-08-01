@@ -159,6 +159,13 @@ export async function ensureAuthSchema() {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_sessions_wallet_idx ON wallet_sessions (wallet_address, expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS transaction_operations_wallet_status_idx ON transaction_operations (wallet_address, status)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS rate_limit_buckets (key TEXT PRIMARY KEY, scope TEXT NOT NULL, subject_hash TEXT NOT NULL, window_start INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, expires_at INTEGER NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets (expires_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS background_jobs (id TEXT PRIMARY KEY, queue TEXT NOT NULL, dedupe_key TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8, available_at INTEGER NOT NULL, lease_owner TEXT, lease_expires_at INTEGER, last_error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(queue,dedupe_key))"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS background_jobs_claim_idx ON background_jobs (queue,status,available_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS distributed_leases (name TEXT PRIMARY KEY, owner TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS response_cache (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS response_cache_expiry_idx ON response_cache (expires_at)"),
   ]).catch((error: unknown) => { authSchemaReady = null; throw error; });
   await authSchemaReady;
 }

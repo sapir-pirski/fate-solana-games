@@ -31,9 +31,3 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: FATE Solana indexer has unresolved dead-letter records
-      - alert: FateRedisExporterDown
-        expr: up{job="redis"} == 0
-        for: 2m
-        labels: { severity: warning }
-        annotations:
-          summary: FATE local Redis exporter is unavailable
