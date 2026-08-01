@@ -1,0 +1,42 @@
+name: Dependency Security
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 12 * * 1"
+  workflow_dispatch:
+permissions:
+  actions: read
+  security-events: write
+  contents: read
+jobs:
+  npm-and-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run security:audit
+      - run: npm run security:sbom -- > fate-sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fate-cyclonedx-sbom
+          path: fate-sbom.cdx.json
+          retention-days: 30
+      - run: docker build --tag fate-platform:security .
+      - name: Scan runtime image
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          aquasec/trivy:0.70.0 image --exit-code 1 --ignore-unfixed
+          --severity CRITICAL,HIGH fate-platform:security
+  scan-lockfiles:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    with:
+      scan-args: |-
+        --recursive
+        ./
+    permissions:
+      actions: read
+      security-events: write
+      contents: read

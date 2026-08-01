@@ -20,6 +20,8 @@
     "test:all": "npm test && npm run test:unit && npm run test:integration && npm run test:contract && npm run test:browser",
     "test:devnet": "node scripts/devnet-smoke.mjs",
     "test:bundle": "npm run build && node scripts/check-bundle-budget.mjs",
+    "security:audit": "npm audit --audit-level=low",
+    "security:sbom": "cyclonedx-npm --package-lock-only --omit dev --output-reproducible --validate --output-format JSON --output-file -",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "indexer": "tsx indexer/cli.ts run",
@@ -41,17 +43,19 @@
     "drizzle-orm": "0.45.2",
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
-    "next": "16.2.6",
+    "next": "^16.2.12",
     "openai": "^7.3.0",
     "postgres": "3.4.7",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "three": "^0.185.1",
+    "wrangler": "^4.118.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/vite-plugin": "^1.50.0",
+    "@cyclonedx/cyclonedx-npm": "^6.0.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
@@ -59,21 +63,24 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "ajv-formats-draft2019": "^1.6.1",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
+    "react-server-dom-webpack": "^19.2.8",
     "tailwindcss": "4.2.1",
-    "tsx": "4.21.0",
+    "tsx": "^4.23.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "vite": "^8.2.0"
   },
   "type": "module",
-  "optionalDependencies": {
-    "@emnapi/core": "1.10.0",
-    "@emnapi/runtime": "1.10.0",
-    "utf-8-validate": "5.0.10"
+  "overrides": {
+    "esbuild": "0.28.1",
+    "postcss": "8.5.25",
+    "sharp": "0.35.3",
+    "uuid": "14.0.1"
   }
 }

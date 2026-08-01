@@ -1,0 +1,20 @@
+# Time-bounded upstream Solana/Anchor exceptions. Re-scan before the expiry.
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0141"
+ignoreUntil = 2026-10-01
+reason = "bincode 1.3.3 is inherited from the Solana SDK; FATE does not deserialize untrusted bincode payloads. Removal requires an upstream Solana/Anchor release."
+
+[[IgnoredVulns]]
+id = "GHSA-fjx5-qpf4-xjf2"
+ignoreUntil = 2026-10-01
+reason = "borsh 0.10.4 is pinned transitively by Solana. FATE account inputs remain Anchor-discriminated and size-constrained; upgrading to borsh 1 changes protocol compatibility."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0161"
+ignoreUntil = 2026-10-01
+reason = "libsecp256k1 is inherited from Solana SDK versions and is not called directly by FATE. Replacement requires the upstream SDK migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0097"
+ignoreUntil = 2026-10-01
+reason = "rand 0.7 is transitive only; FATE outcomes use provider-bound Switchboard randomness and never rand. Upgrade requires upstream Solana dependency convergence."
