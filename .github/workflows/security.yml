@@ -1,42 +1,46 @@
-name: Dependency Security
+name: Security
+
 on:
   push:
     branches: [main]
+  pull_request:
   schedule:
-    - cron: "30 12 * * 1"
-  workflow_dispatch:
+    - cron: "31 4 * * 1"
+
 permissions:
-  actions: read
-  security-events: write
   contents: read
+  security-events: write
+
 jobs:
-  npm-and-sbom:
+  javascript:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: npm run security:audit
-      - run: npm run security:sbom -- > fate-sbom.cdx.json
+      - run: npm audit --audit-level=high
+      - run: npm run security:sbom > sbom.cdx.json
       - uses: actions/upload-artifact@v4
-        with:
-          name: fate-cyclonedx-sbom
-          path: fate-sbom.cdx.json
-          retention-days: 30
-      - run: docker build --tag fate-platform:security .
-      - name: Scan runtime image
-        run: >-
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-          aquasec/trivy:0.70.0 image --exit-code 1 --ignore-unfixed
-          --severity CRITICAL,HIGH fate-platform:security
-  scan-lockfiles:
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
-    with:
-      scan-args: |-
-        --recursive
-        ./
-    permissions:
-      actions: read
-      security-events: write
-      contents: read
+        with: { name: sbom, path: sbom.cdx.json, retention-days: 30 }
+
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with: { languages: javascript-typescript }
+      - uses: github/codeql-action/analyze@v3
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit

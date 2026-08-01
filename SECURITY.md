@@ -13,5 +13,8 @@ Before mainnet launch, require:
 - deployment verification, reproducible builds, monitoring, and an incident runbook;
 - load, economic-invariant, fuzz, and adversarial integration tests.
 
-The program includes wager bounds, checked arithmetic, program-owned escrow vaults, timeout refunds, a pause switch, and two-step admin transfer. These controls reduce risk but do not replace an audit.
+The current internal review, threat model, open findings and independent-audit
+scope are maintained in `docs/SECURITY_AUDIT.md`, `docs/THREAT_MODEL.md`, and
+`docs/EXTERNAL_AUDIT_SCOPE.md`. Internal review is not independent assurance.
 
+The program includes wager bounds, checked arithmetic, program-owned escrow vaults, timeout refunds, a pause switch, and two-step admin transfer. These controls reduce risk but do not replace an audit.
