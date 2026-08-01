@@ -173,6 +173,21 @@ export async function ensureAuthSchema() {
   await authSchemaReady;
 }
 
+let complianceSchemaReady: Promise<unknown> | null = null;
+export async function ensureComplianceSchema() {
+  if (getDatabaseBackend() === "postgres") return ensurePostgresSchema();
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  if (!complianceSchemaReady) complianceSchemaReady = env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS compliance_profiles (wallet_address TEXT PRIMARY KEY, country_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', jurisdiction_status TEXT NOT NULL DEFAULT 'unreviewed', sanctions_status TEXT NOT NULL DEFAULT 'not_screened', age_attested_at INTEGER, terms_version TEXT, privacy_version TEXT, risk_version TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS compliance_profiles_status_idx ON compliance_profiles (status, jurisdiction_status)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS compliance_audit_events (id TEXT PRIMARY KEY, wallet_hash TEXT NOT NULL, event_type TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT, evidence_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS compliance_audit_wallet_created_idx ON compliance_audit_events (wallet_hash, created_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS privacy_requests (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, request_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS privacy_requests_wallet_created_idx ON privacy_requests (wallet_address, requested_at)"),
+  ]).catch((error: unknown) => { complianceSchemaReady = null; throw error; });
+  await complianceSchemaReady;
+}
+
 export async function checkDatabaseHealth() {
   if (getDatabaseBackend() === "postgres") {
     await withDatabase(async () => {

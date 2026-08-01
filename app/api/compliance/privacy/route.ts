@@ -1,0 +1,9 @@
+import { desc, eq } from "drizzle-orm";
+import { ensureComplianceSchema, getDb, withDatabase } from "../../../../db";
+import { privacyRequests } from "../../../../db/schema";
+import { authenticatedWallet, requireSameOrigin } from "../../../../lib/auth";
+import { auditCompliance } from "../../../../lib/compliance";
+
+const types = new Set(["access", "export", "erasure", "restriction", "rectification", "objection"]);
+export async function GET(request: Request) { return withDatabase(async () => { const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 }); await ensureComplianceSchema(); const requests = await getDb().select().from(privacyRequests).where(eq(privacyRequests.walletAddress, session.walletAddress)).orderBy(desc(privacyRequests.requestedAt)).limit(50); return Response.json({ requests }, { headers: { "cache-control": "no-store" } }); }); }
+export async function POST(request: Request) { return withDatabase(async () => { if (!requireSameOrigin(request)) return Response.json({ code: "INVALID_ORIGIN" }, { status: 403 }); const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 }); const body = await request.json() as Record<string, unknown>; const requestType = String(body.requestType ?? ""); if (!types.has(requestType)) return Response.json({ code: "INVALID_PRIVACY_REQUEST" }, { status: 400 }); await ensureComplianceSchema(); const requestRecord = { id: crypto.randomUUID(), walletAddress: session.walletAddress, requestType, status: "received" }; await getDb().insert(privacyRequests).values(requestRecord); await auditCompliance(session.walletAddress, "privacy_request", "received", null, { requestType }); return Response.json({ request: requestRecord, message: "Request received for human review; legally required security and audit records are not automatically erased." }, { status: 202 }); }); }

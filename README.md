@@ -60,6 +60,10 @@ Set `OPENAI_API_KEY` in `.env.local` to enable Copilot. `OPENAI_MODEL` defaults 
 
 Responsible-play limits are deterministic application controls, not model judgments. Self-exclusion cannot be shortened while active, and AI drafts still require simulation plus explicit approval by the connected wallet.
 
+## Compliance boundary
+
+FATE is a test-token devnet demonstration, not a licensed real-money service. Wallet-authenticated age and jurisdiction attestations, versioned consent, play limits, cooling-off, self-exclusion, privacy requests, and immutable compliance decisions are enforced before transaction preparation. Mainnet is blocked in server policy. Configure ISO alpha-2 allow/block lists with `COMPLIANCE_ALLOWED_COUNTRIES` and `COMPLIANCE_BLOCKED_COUNTRIES`; a network/declaration mismatch requires review. Production KYC, sanctions screening, licensing and jurisdiction-specific legal approval remain mandatory before any real-value launch.
+
 Run `npm run db:generate` after schema changes. Apply generated migrations through the hosting environment before enabling indexer writes.
 
 ## Deployment gates

@@ -2,6 +2,12 @@
  * are idempotent so a fresh instance and a restarted application converge on
  * the same schema. */
 export const POSTGRES_SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS compliance_profiles (wallet_address TEXT PRIMARY KEY, country_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', jurisdiction_status TEXT NOT NULL DEFAULT 'unreviewed', sanctions_status TEXT NOT NULL DEFAULT 'not_screened', age_attested_at BIGINT, terms_version TEXT, privacy_version TEXT, risk_version TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT)`,
+  `CREATE INDEX IF NOT EXISTS compliance_profiles_status_idx ON compliance_profiles (status, jurisdiction_status)`,
+  `CREATE TABLE IF NOT EXISTS compliance_audit_events (id TEXT PRIMARY KEY, wallet_hash TEXT NOT NULL, event_type TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT, evidence_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT)`,
+  `CREATE INDEX IF NOT EXISTS compliance_audit_wallet_created_idx ON compliance_audit_events (wallet_hash, created_at)`,
+  `CREATE TABLE IF NOT EXISTS privacy_requests (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, request_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT, completed_at TEXT)`,
+  `CREATE INDEX IF NOT EXISTS privacy_requests_wallet_created_idx ON privacy_requests (wallet_address, requested_at)`,
   `CREATE TABLE IF NOT EXISTS event_logs (id TEXT PRIMARY KEY, event_type TEXT NOT NULL, category TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'info', session_id TEXT, wallet_address TEXT, game_type TEXT, game_id TEXT, amount_lamports BIGINT, transaction_signature TEXT, metadata_json TEXT NOT NULL DEFAULT '{}', schema_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT)`,
   `CREATE INDEX IF NOT EXISTS event_logs_created_at_idx ON event_logs (created_at)`,
   `CREATE INDEX IF NOT EXISTS event_logs_event_created_idx ON event_logs (event_type, created_at)`,

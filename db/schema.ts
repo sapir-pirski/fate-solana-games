@@ -217,3 +217,20 @@ export const agentAlerts = sqliteTable("agent_alerts", {
 export const responsiblePlayLimits = sqliteTable("responsible_play_limits", {
   walletAddress: text("wallet_address").primaryKey(), dailyLamports: integer("daily_lamports"), weeklyLamports: integer("weekly_lamports"), cooldownUntil: integer("cooldown_until"), selfExcludedUntil: integer("self_excluded_until"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const complianceProfiles = sqliteTable("compliance_profiles", {
+  walletAddress: text("wallet_address").primaryKey(), countryCode: text("country_code").notNull(), status: text("status").notNull().default("pending"),
+  jurisdictionStatus: text("jurisdiction_status").notNull().default("unreviewed"), sanctionsStatus: text("sanctions_status").notNull().default("not_screened"),
+  ageAttestedAt: integer("age_attested_at"), termsVersion: text("terms_version"), privacyVersion: text("privacy_version"), riskVersion: text("risk_version"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("compliance_profiles_status_idx").on(table.status, table.jurisdictionStatus)]);
+
+export const complianceAuditEvents = sqliteTable("compliance_audit_events", {
+  id: text("id").primaryKey(), walletHash: text("wallet_hash").notNull(), eventType: text("event_type").notNull(), decision: text("decision").notNull(),
+  reason: text("reason"), evidenceJson: text("evidence_json").notNull().default("{}"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [index("compliance_audit_wallet_created_idx").on(table.walletHash, table.createdAt)]);
+
+export const privacyRequests = sqliteTable("privacy_requests", {
+  id: text("id").primaryKey(), walletAddress: text("wallet_address").notNull(), requestType: text("request_type").notNull(), status: text("status").notNull().default("received"),
+  requestedAt: text("requested_at").notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text("completed_at"),
+}, table => [index("privacy_requests_wallet_created_idx").on(table.walletAddress, table.requestedAt)]);

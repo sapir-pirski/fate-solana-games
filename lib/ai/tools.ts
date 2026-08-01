@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { gameEntries, games, responsiblePlayLimits, transactionIntents } from "../../db/schema";
 import { BASE58, GAME_TYPES } from "./policy";
+import { complianceDecision } from "../compliance";
 
 export const AI_TOOLS = [
   { type: "function", name: "explain_game", description: "Explain deterministic FATE game rules and failure recovery.", strict: true, parameters: { type: "object", properties: { gameType: { type: "string", enum: ["jackpot", "coinflip", "daily"] } }, required: ["gameType"], additionalProperties: false } },
@@ -68,8 +69,8 @@ export async function executeAiTool(name: string, raw: Record<string, unknown>, 
   if (name === "draft_game_action") {
     const wallet = authorizedWallet(raw, context); const gameType = String(raw.gameType); const amount = Number(raw.amountLamports);
     if (!GAME_TYPES.has(gameType) || !Number.isSafeInteger(amount) || amount < 0) throw new Error("INVALID_DRAFT");
-    const limit = await executeAiTool("check_responsible_limits", { walletAddress: wallet, proposedLamports: amount }, context) as { allowed: boolean; reason: string | null };
-    return { id: crypto.randomUUID(), network: "devnet", wallet, gameType, action: raw.action, amountLamports: amount, side: raw.side, simulationRequired: true, walletApprovalRequired: true, submitted: false, allowed: limit.allowed, blocker: limit.reason, expiresAt: Date.now() + 10 * 60_000 };
+    const limit = await executeAiTool("check_responsible_limits", { walletAddress: wallet, proposedLamports: amount }, context) as { allowed: boolean; reason: string | null }; const compliance = await complianceDecision(wallet);
+    return { id: crypto.randomUUID(), network: "devnet", wallet, gameType, action: raw.action, amountLamports: amount, side: raw.side, simulationRequired: true, walletApprovalRequired: true, submitted: false, allowed: limit.allowed && compliance.allowed, blocker: limit.reason ?? (compliance.allowed ? null : compliance.code), expiresAt: Date.now() + 10 * 60_000 };
   }
   throw new Error("UNKNOWN_TOOL");
 }
