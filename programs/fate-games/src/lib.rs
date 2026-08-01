@@ -29,6 +29,10 @@ pub mod fate_games {
         min_wager: u64,
         max_wager: u64,
     ) -> Result<()> {
+        require!(
+            randomness_authority != Pubkey::default() && treasury != Pubkey::default(),
+            FateError::InvalidAuthority
+        );
         require!(fee_bps <= 1_000, FateError::FeeTooHigh);
         require!(
             min_wager > 0 && max_wager >= min_wager,
@@ -55,6 +59,44 @@ pub mod fate_games {
     pub fn set_paused(ctx: Context<AdminConfig>, paused: bool) -> Result<()> {
         ctx.accounts.config.paused = paused;
         emit!(PauseChanged { paused });
+        Ok(())
+    }
+
+    pub fn update_config(
+        ctx: Context<AdminConfig>,
+        randomness_authority: Pubkey,
+        treasury: Pubkey,
+        fee_bps: u16,
+        min_wager: u64,
+        max_wager: u64,
+    ) -> Result<()> {
+        require!(
+            randomness_authority != Pubkey::default() && treasury != Pubkey::default(),
+            FateError::InvalidAuthority
+        );
+        require!(fee_bps <= 1_000, FateError::FeeTooHigh);
+        require!(
+            min_wager > 0 && max_wager >= min_wager,
+            FateError::InvalidWagerLimits
+        );
+        let config = &mut ctx.accounts.config;
+        let previous_randomness_authority = config.randomness_authority;
+        let previous_treasury = config.treasury;
+        config.randomness_authority = randomness_authority;
+        config.treasury = treasury;
+        config.fee_bps = fee_bps;
+        config.min_wager = min_wager;
+        config.max_wager = max_wager;
+        emit!(ConfigUpdated {
+            admin: config.admin,
+            previous_randomness_authority,
+            randomness_authority,
+            previous_treasury,
+            treasury,
+            fee_bps,
+            min_wager,
+            max_wager,
+        });
         Ok(())
     }
 
@@ -525,6 +567,31 @@ pub mod fate_games {
         Ok(())
     }
 
+    pub fn cancel_daily_timeout(ctx: Context<CancelDailyTimeout>) -> Result<()> {
+        let daily = &mut ctx.accounts.daily;
+        require!(
+            daily.state == GameState::RandomnessRequested,
+            FateError::InvalidGameState
+        );
+        let unlock_at = daily
+            .randomness_requested_at
+            .checked_add(RANDOMNESS_TIMEOUT_SECONDS)
+            .ok_or(FateError::ArithmeticOverflow)?;
+        require!(
+            Clock::get()?.unix_timestamp >= unlock_at,
+            FateError::RandomnessNotTimedOut
+        );
+        daily.state = GameState::Settled;
+        daily.randomness_requested_at = 0;
+        daily.randomness = [0; 32];
+        daily.reward = 0;
+        emit!(DailyCaseTimedOut {
+            account: daily.key(),
+            player: daily.player,
+        });
+        Ok(())
+    }
+
     pub fn initialize_daily_vault(ctx: Context<InitializeDailyVault>) -> Result<()> {
         ctx.accounts.vault.bump = ctx.bumps.vault;
         Ok(())
@@ -602,7 +669,9 @@ fn daily_reward(byte: u8) -> u64 {
 }
 
 fn debit_program_vault(vault: &AccountInfo, recipient: &AccountInfo, amount: u64) -> Result<()> {
-    require!(amount > 0, FateError::InvalidAmount);
+    if amount == 0 {
+        return Ok(());
+    }
     let vault_balance = vault.lamports();
     let recipient_balance = recipient.lamports();
     **vault.try_borrow_mut_lamports()? = vault_balance
@@ -804,6 +873,13 @@ pub struct SettleDailyCase<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CancelDailyTimeout<'info> {
+    pub player: Signer<'info>,
+    #[account(mut, seeds = [DAILY_SEED, player.key().as_ref()], bump = daily.bump, has_one = player)]
+    pub daily: Account<'info, DailyPlayer>,
+}
+
+#[derive(Accounts)]
 pub struct InitializeDailyVault<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -967,6 +1043,17 @@ pub struct PauseChanged {
     pub paused: bool,
 }
 #[event]
+pub struct ConfigUpdated {
+    pub admin: Pubkey,
+    pub previous_randomness_authority: Pubkey,
+    pub randomness_authority: Pubkey,
+    pub previous_treasury: Pubkey,
+    pub treasury: Pubkey,
+    pub fee_bps: u16,
+    pub min_wager: u64,
+    pub max_wager: u64,
+}
+#[event]
 pub struct JackpotCreated {
     pub round: Pubkey,
     pub round_id: u64,
@@ -1022,6 +1109,11 @@ pub struct DailyCaseSettled {
     pub player: Pubkey,
     pub reward: u64,
     pub randomness: [u8; 32],
+}
+#[event]
+pub struct DailyCaseTimedOut {
+    pub account: Pubkey,
+    pub player: Pubkey,
 }
 
 #[error_code]
@@ -1110,6 +1202,8 @@ mod tests {
     #[test]
     fn fee_math_is_bounded() {
         assert_eq!(calculate_fee(2_000_000_000, 300).unwrap(), 60_000_000);
+        assert_eq!(calculate_fee(2_000_000_000, 0).unwrap(), 0);
+        assert!(calculate_fee(u64::MAX, 1_000).is_err());
     }
 
     #[test]
@@ -1118,5 +1212,35 @@ mod tests {
         assert_eq!(daily_reward(2), 250_000_000);
         assert_eq!(daily_reward(52), 50_000_000);
         assert_eq!(daily_reward(255), 10_000_000);
+    }
+
+    #[test]
+    fn weighted_selection_rejects_empty_rounds() {
+        assert!(weighted_winner(&[], 0, &[1u8; 32]).is_err());
+    }
+
+    #[test]
+    fn every_random_target_selects_an_entry() {
+        let entries = [
+            JackpotEntry {
+                player: Pubkey::new_unique(),
+                amount: 1,
+            },
+            JackpotEntry {
+                player: Pubkey::new_unique(),
+                amount: 2,
+            },
+            JackpotEntry {
+                player: Pubkey::new_unique(),
+                amount: 3,
+            },
+        ];
+        for target in 0..6u64 {
+            let mut randomness = [0u8; 32];
+            randomness[..8].copy_from_slice(&target.to_le_bytes());
+            assert!(entries.iter().any(|entry| {
+                weighted_winner(&entries, 6, &randomness).unwrap() == entry.player
+            }));
+        }
     }
 }
