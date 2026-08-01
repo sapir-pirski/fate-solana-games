@@ -10,6 +10,7 @@ type Commitment = "confirmed" | "finalized";
 export class FateIndexer {
   readonly store: IndexerStore; readonly rpc: RpcPool; readonly workerId = randomUUID();
   private timer?: ReturnType<typeof setTimeout>; private server?: Server; private running = false; private stopped = false; private subscription?: number; private latestFinalized = 0;
+  private cycles=0;private cycleFailures=0;private transactionsSeen=0;private eventsSeen=0;private reorgs=0;private lastCycleDurationMs=0;
   constructor(readonly config: { databaseUrl: string; rpcUrls: string[]; programId: string; cluster: string; expectedGenesisHash?: string; pollMs?: number; healthPort?: number }) {
     new PublicKey(config.programId); this.store = new IndexerStore(config.databaseUrl, config.cluster); this.rpc = new RpcPool(config.rpcUrls);
   }
@@ -48,7 +49,7 @@ export class FateIndexer {
     return collected;
   }
   async cycle() {
-    if (this.running) return; this.running = true;
+    if (this.running) return; this.running = true;const cycleStarted=Date.now();
     const runId = await this.store.startRun(this.workerId); let transactions = 0; let events = 0; let reorged = 0; let slots: number[] = [];
     try {
       for (const commitment of ["confirmed", "finalized"] as const) {
@@ -73,11 +74,13 @@ export class FateIndexer {
         }
       }
       await this.store.finishRun(runId, { status: "complete", startSlot: slots.length ? Math.min(...slots) : undefined, endSlot: slots.length ? Math.max(...slots) : undefined, transactions, events, reorged });
+      this.cycles++;this.transactionsSeen+=transactions;this.eventsSeen+=events;this.reorgs+=reorged;
       await this.store.log("info", "indexer_cycle", "Reconciliation cycle completed.", { transactions, events, reorged, finalizedSlot: this.latestFinalized });
     } catch (error) {
+      this.cycleFailures++;
       await this.store.finishRun(runId, { status: "failed", transactions, events, reorged, error: error instanceof Error ? error.message : String(error) });
       await this.store.failure({ stage: "cycle", error, retryable: isTransient(error) }); throw error;
-    } finally { this.running = false; }
+    } finally { this.lastCycleDurationMs=Date.now()-cycleStarted;this.running = false; }
   }
   async replayFailures() {
     const failures = await this.store.retryableFailures();
@@ -98,7 +101,7 @@ export class FateIndexer {
       if (request.url !== "/health" && request.url !== "/metrics") { response.writeHead(404).end(); return; }
       try {
         const status = await this.store.status(); const head = await this.rpc.getSlot("finalized"); const lag = Math.max(0, head - Number(status.cursor?.last_slot ?? 0));
-        if (request.url === "/metrics") { response.writeHead(200, { "content-type": "text/plain" }); response.end(`fate_indexer_up 1\nfate_indexer_finalized_slot ${this.latestFinalized}\nfate_indexer_finalized_lag ${lag}\nfate_indexer_dead_letters ${status.deadLetters}\n`); }
+        if (request.url === "/metrics") { const providers=this.rpc.providers;const available=providers.filter(provider=>provider.openUntil<=Date.now()).length;const avgLatency=providers.length?providers.reduce((sum,provider)=>sum+provider.latencyMs,0)/providers.length:0;response.writeHead(200, { "content-type": "text/plain" }); response.end(`fate_indexer_up 1\nfate_indexer_finalized_slot ${this.latestFinalized}\nfate_indexer_finalized_lag ${lag}\nfate_indexer_dead_letters ${status.deadLetters}\nfate_indexer_cycles_total ${this.cycles}\nfate_indexer_cycle_failures_total ${this.cycleFailures}\nfate_indexer_transactions_total ${this.transactionsSeen}\nfate_indexer_events_total ${this.eventsSeen}\nfate_indexer_reorgs_total ${this.reorgs}\nfate_indexer_last_cycle_duration_ms ${this.lastCycleDurationMs}\nfate_solana_rpc_providers_available ${available}\nfate_solana_rpc_latency_ms ${avgLatency}\n`); }
         else { const ready = Boolean(status.cursor) && lag < 500; response.writeHead(ready ? 200 : 503, { "content-type": "application/json" }); response.end(JSON.stringify({ status: ready ? "ready" : "syncing", cluster: this.config.cluster, finalizedSlot: this.latestFinalized, head, lag, deadLetters: status.deadLetters })); }
       } catch (error) { response.writeHead(503, { "content-type": "application/json" }); response.end(JSON.stringify({ status: "error", error: error instanceof Error ? error.message : String(error) })); }
     }).listen(this.config.healthPort ?? 9464, "0.0.0.0");

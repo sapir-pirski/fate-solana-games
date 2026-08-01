@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { POSTGRES_SCHEMA_STATEMENTS } from "./postgres-schema";
 import * as schema from "./schema";
+import { observe, withSpan } from "../lib/telemetry";
 
 type DatabaseBackend = "d1" | "postgres";
 type PostgresClient = ReturnType<typeof postgres>;
@@ -52,14 +53,16 @@ export function getDb(): any {
 }
 
 export async function withDatabase<T>(operation: () => Promise<T>): Promise<T> {
-  if (getDatabaseBackend() === "d1") return operation();
+  const started=Date.now();
+  if (getDatabaseBackend() === "d1") {try{return await withSpan("database.operation",{component:"database",backend:"d1"},operation);}finally{observe("fate_database_operation_duration_ms",Date.now()-started,{backend:"d1"});}}
   const existing = postgresContext.getStore();
   if (existing) return operation();
   const client = createPostgresClient();
   const context = { client, db: drizzlePostgres(client, { schema }) };
   try {
-    return await postgresContext.run(context, operation);
+    return await withSpan("database.operation",{component:"database",backend:"postgres"},()=>postgresContext.run(context, operation));
   } finally {
+    observe("fate_database_operation_duration_ms",Date.now()-started,{backend:"postgres"});
     await client.end({ timeout: 5 });
   }
 }

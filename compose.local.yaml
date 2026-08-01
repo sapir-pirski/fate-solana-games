@@ -22,6 +22,8 @@ services:
       FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
+      OTEL_SERVICE_NAME: fate-platform
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       AI_MAX_REQUESTS_PER_WALLET_DAY: ${AI_MAX_REQUESTS_PER_WALLET_DAY:-50}
       AI_MONTHLY_BUDGET_USD: ${AI_MONTHLY_BUDGET_USD:-5}
       AI_AGENT_ARENA_ENABLED: "false"
@@ -69,6 +71,9 @@ services:
       SOLANA_CLUSTER: ${SOLANA_CLUSTER:-devnet}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
       SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.devnet.solana.com}
+      COORDINATION_HEALTH_PORT: "9465"
+      OTEL_SERVICE_NAME: fate-coordination-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       SOLANA_GENESIS_HASH: ${SOLANA_GENESIS_HASH:-}
       FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
       INDEXER_POLL_MS: ${INDEXER_POLL_MS:-15000}
@@ -105,7 +110,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      disable: true
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:9465/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks: [backend, observability]
     labels:
       fate.local.component: coordination-worker
@@ -147,6 +156,17 @@ services:
       - loki_data:/loki
     networks: [frontend, observability]
 
+  tempo:
+    image: grafana/tempo:2.7.2
+    restart: unless-stopped
+    command: [-config.file=/etc/tempo.yaml]
+    ports:
+      - 127.0.0.1:${TEMPO_PORT:-3200}:3200
+    volumes:
+      - ./deploy/local/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks: [frontend, backend, observability]
+
   alloy:
     image: grafana/alloy:v1.11.3
     restart: unless-stopped
@@ -172,7 +192,7 @@ services:
       - ./deploy/local/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/local/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-    depends_on: [prometheus, loki]
+    depends_on: [prometheus, loki, tempo]
     networks: [frontend, observability]
 
   ollama:
@@ -197,6 +217,7 @@ volumes:
   postgres_data: {}
   prometheus_data: {}
   loki_data: {}
+  tempo_data: {}
   alloy_data: {}
   grafana_data: {}
   ollama_data: {}

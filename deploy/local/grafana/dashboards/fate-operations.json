@@ -1,0 +1,15 @@
+{
+  "annotations":{"list":[]},"editable":false,"schemaVersion":41,"tags":["fate","operations"],"title":"FATE operations","uid":"fate-operations","version":1,"refresh":"10s","time":{"from":"now-6h","to":"now"},"templating":{"list":[]},
+  "panels":[
+    {"id":1,"type":"stat","title":"Submitted / stuck transactions","gridPos":{"x":0,"y":0,"w":6,"h":6},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate:transaction_stuck:count","refId":"A"}]},
+    {"id":2,"type":"stat","title":"Pending queue jobs","gridPos":{"x":6,"y":0,"w":6,"h":6},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate:queue_pending:count","refId":"A"}]},
+    {"id":3,"type":"stat","title":"Finalized slot lag","gridPos":{"x":12,"y":0,"w":6,"h":6},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate:indexer_lag:max","refId":"A"}]},
+    {"id":4,"type":"stat","title":"Available RPC providers","gridPos":{"x":18,"y":0,"w":6,"h":6},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate:rpc_available:min","refId":"A"}]},
+    {"id":5,"type":"timeseries","title":"Transaction operations by state","gridPos":{"x":0,"y":6,"w":12,"h":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate_transaction_operations","legendFormat":"{{status}}","refId":"A"}]},
+    {"id":6,"type":"timeseries","title":"Queue age and depth","gridPos":{"x":12,"y":6,"w":12,"h":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate_queue_oldest_age_seconds","legendFormat":"age {{queue}} {{status}}","refId":"A"},{"expr":"fate_queue_jobs","legendFormat":"jobs {{queue}} {{status}}","refId":"B"}]},
+    {"id":7,"type":"timeseries","title":"Indexer throughput and failures","gridPos":{"x":0,"y":14,"w":12,"h":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"rate(fate_indexer_transactions_total[5m])","legendFormat":"transactions/s","refId":"A"},{"expr":"rate(fate_indexer_events_total[5m])","legendFormat":"events/s","refId":"B"},{"expr":"rate(fate_indexer_cycle_failures_total[5m])","legendFormat":"failures/s","refId":"C"}]},
+    {"id":8,"type":"timeseries","title":"RPC latency","gridPos":{"x":12,"y":14,"w":12,"h":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"fate_solana_rpc_latency_ms","legendFormat":"average latency","refId":"A"}]},
+    {"id":9,"type":"logs","title":"Correlated structured logs","gridPos":{"x":0,"y":22,"w":16,"h":10},"datasource":{"type":"loki","uid":"loki"},"targets":[{"expr":"{stack=\"fate-local\"} | json","refId":"A"}],"options":{"showTime":true,"showLabels":false,"wrapLogMessage":true,"sortOrder":"Descending","enableLogDetails":true}},
+    {"id":10,"type":"traces","title":"Recent traces","gridPos":{"x":16,"y":22,"w":8,"h":10},"datasource":{"type":"tempo","uid":"tempo"},"targets":[{"queryType":"search","filters":[{"id":"service-name","operator":"=","scope":"resource","tag":"service.name","value":["fate-platform"],"valueType":"string"}],"limit":20,"refId":"A"}]}
+  ]
+}
