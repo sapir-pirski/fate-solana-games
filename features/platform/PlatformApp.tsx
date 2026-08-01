@@ -116,13 +116,15 @@ function Header({ view, setView, connected, connecting, address, balance, connec
   </header>;
 }
 
-function Fairness({ hash = "A7f3...9c2B" }: { hash?: string }) {
+function Fairness({ hash }: { hash?: string | null }) {
   const [copied, setCopied] = useState(false);
+  const proof = hash && !hash.includes("...") ? hash : null;
+  const displayHash = proof && proof.length > 18 ? `${proof.slice(0, 10)}…${proof.slice(-8)}` : proof;
   return <div className="fairness">
-    <div className="fairness-title"><ShieldCheck size={18} /><span>Provably fair</span><small>ON-CHAIN</small></div>
-    <p>Every outcome is generated and verified on Solana. No hidden odds. No trust required.</p>
-    <div className="hash"><code>{hash}</code><button onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy hash">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div>
-    <details className="fairness-details"><summary>How fairness works <ArrowUpRight size={14} /></summary><p>Each wager is locked before a Switchboard commitment is bound to the game. The revealed value and deterministic result remain in the Solana account.</p><a href="/verify">Open independent verifier <ArrowUpRight size={14}/></a></details>
+    <div className="fairness-title"><ShieldCheck size={18} /><span>Fairness proof</span><small>{proof ? "ON-CHAIN" : "NOT AVAILABLE"}</small></div>
+    <p>{proof ? "Indexed randomness evidence is available for independent verification." : "No indexed on-chain fairness proof is available for this game yet."}</p>
+    {proof ? <div className="hash"><code>{displayHash}</code><button type="button" onClick={() => { void navigator.clipboard.writeText(proof); setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy fairness proof">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div> : <div className="hash unavailable"><code>No fairness proof available</code></div>}
+    <details className="fairness-details"><summary>How fairness works <ArrowUpRight size={14} /></summary><p>When a game is configured and settled, its committed randomness and deterministic result can be checked against the finalized Solana account.</p><a href="/verify">Open independent verifier <ArrowUpRight size={14}/></a></details>
   </div>;
 }
 
@@ -183,7 +185,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
     </section>
 
     <section className="bottom-grid">
-      <Fairness />
+      <Fairness hash={round?.randomness_hex ?? null}/>
       <div className="previous card"><div className="card-title"><div><Trophy size={18}/><strong>Previous winner</strong></div><span>Preview only</span></div><div className="winner"><div className="winner-mark">7c</div><div><strong>7cXq...2Kp9</strong><span>Example result · not indexed</span></div><b><SolIcon /> 12.84 SOL</b></div><span className="text-link unavailable" title="A transaction link appears after a finalized result is indexed">Transaction unavailable <ShieldCheck size={14}/></span></div>
     </section>
   </motion.main>;

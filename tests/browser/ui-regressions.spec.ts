@@ -24,6 +24,9 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(presets.getByRole("button", { name: "1.00" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("No round indexed", { exact: true })).toBeVisible();
   await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("No fairness proof available", { exact: true })).toBeVisible();
+  await expect(page.getByText("A7f3...9c2B", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy fairness proof" })).toHaveCount(0);
 
   await page.getByRole("button", { name: /Connect wallet to enter/ }).click();
   const walletDialog = page.getByRole("dialog", { name: "Connect a wallet" });
