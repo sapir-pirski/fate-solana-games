@@ -51,7 +51,10 @@ test("coinflip empty state is readable and points to creation", async ({ page })
   await expect(emptyState.getByText("No open coinflips yet", { exact: true })).toBeVisible();
   const textBox = await emptyState.getByText("Create the first challenge and wait for another player to join.").boundingBox();
   expect(textBox && textBox.width > 180).toBeTruthy();
-  await emptyState.getByRole("button", { name: "Set up a coinflip" }).click();
+  const setupButton = emptyState.getByRole("button", { name: "Set up a coinflip" });
+  const setupButtonBox = await setupButton.boundingBox();
+  expect(setupButtonBox).toBeTruthy();
+  await page.mouse.click(setupButtonBox!.x + setupButtonBox!.width / 2, setupButtonBox!.y + setupButtonBox!.height / 2);
   const setup = page.getByRole("dialog", { name: "Set up a coinflip" });
   await expect(setup).toBeVisible();
   const setupBox = await setup.boundingBox();
