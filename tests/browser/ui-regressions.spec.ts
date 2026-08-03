@@ -51,7 +51,7 @@ test("coinflip empty state is readable and points to creation", async ({ page })
   await expect(emptyState.getByText("No open coinflips yet", { exact: true })).toBeVisible();
   const textBox = await emptyState.getByText("Create the first challenge and wait for another player to join.").boundingBox();
   expect(textBox && textBox.width > 180).toBeTruthy();
-  const setupButton = emptyState.getByRole("button", { name: "Set up a coinflip" });
+  const setupButton = emptyState.getByRole("link", { name: "Set up a coinflip" });
   const setupButtonBox = await setupButton.boundingBox();
   expect(setupButtonBox).toBeTruthy();
   await page.mouse.click(setupButtonBox!.x + setupButtonBox!.width / 2, setupButtonBox!.y + setupButtonBox!.height / 2);
@@ -65,6 +65,21 @@ test("coinflip empty state is readable and points to creation", async ({ page })
   await page.keyboard.press("Escape");
   await expect(setup).toBeHidden();
   await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
+});
+
+test("coinflip setup opens without JavaScript hydration", async ({ browser }) => {
+  const context = await browser.newContext({
+    javaScriptEnabled: false,
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+
+  await page.goto("/coinflip");
+  await page.getByRole("link", { name: "Create a coinflip" }).click();
+  await expect(page.locator("#coinflip-setup")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Set up a coinflip" })).toBeVisible();
+
+  await context.close();
 });
 
 test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
