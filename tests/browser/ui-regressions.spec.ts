@@ -50,8 +50,9 @@ test("coinflip empty state is readable and points to creation", async ({ page })
   await expect(emptyState.getByText("No open coinflips yet", { exact: true })).toBeVisible();
   const textBox = await emptyState.getByText("Create the first challenge and wait for another player to join.").boundingBox();
   expect(textBox && textBox.width > 180).toBeTruthy();
-  await emptyState.getByRole("button", { name: "Create a coinflip" }).click();
+  await emptyState.getByRole("button", { name: "Set up a coinflip" }).click();
   await expect(page.locator("#coin-wager")).toBeFocused();
+  await expect(page.locator(".create-card")).toHaveClass(/form-highlighted/);
   await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
 });
 
