@@ -140,7 +140,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
   const [seconds, setSeconds] = useState(18);
   useEffect(() => { const timer = setInterval(() => setSeconds(s => s > 0 ? s - 1 : 30), 1000); return () => clearInterval(timer); }, []);
   const pot = round ? sol(round.pot_lamports) : 0;
-  const chance = jackpotChance(Number(amount), pot);
+  const chance = connected && round ? jackpotChance(Number(amount), pot) : 0;
   const enter = async () => {
     if (!connected) return onConnect();
     if (!round) return notify({ title: "No open round", text: "Wait for a finalized jackpot round to appear in the indexer." });

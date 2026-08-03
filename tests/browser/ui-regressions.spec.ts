@@ -12,6 +12,7 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   const chanceLabel = page.locator(".chance-ring span");
   await expect(chanceValue).toBeVisible();
   await expect(chanceLabel).toBeVisible();
+  await expect(chanceValue).toHaveText("0.0%");
   await chanceValue.scrollIntoViewIfNeeded();
   const valueBox = await chanceValue.boundingBox();
   const labelBox = await chanceLabel.boundingBox();
