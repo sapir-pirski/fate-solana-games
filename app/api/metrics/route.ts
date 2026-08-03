@@ -10,11 +10,10 @@ export async function GET() {
   const dynamic: string[] = [];
   try {
     await Promise.all([ensureAuthSchema(), ensureAiSchema(), ensureGameSchema()]);
-    const [operations, jobs, sessions, cache, aiUsage, aiTools, aiFeedback, aiConversations, gameActivity] = await Promise.all([
+    const [operations, jobs, sessions, aiUsage, aiTools, aiFeedback, aiConversations, gameActivity] = await Promise.all([
       env.DB.prepare("SELECT status,COUNT(*) count FROM transaction_operations GROUP BY status").all<{ status: string; count: number }>(),
       env.DB.prepare("SELECT queue,status,COUNT(*) count,MAX(0,CAST(strftime('%s','now') AS INTEGER)-MIN(available_at)) oldest FROM background_jobs GROUP BY queue,status").all<{ queue: string; status: string; count: number; oldest: number }>(),
       env.DB.prepare("SELECT COUNT(*) sessions FROM wallet_sessions WHERE revoked_at IS NULL AND expires_at>CAST(strftime('%s','now') AS INTEGER)").first<{ sessions: number }>(),
-      env.DB.prepare("SELECT COUNT(*) cache_total,SUM(CASE WHEN expires_at>CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END) cache_live FROM response_cache").first<{ cache_total: number; cache_live: number | null }>(),
       env.DB.prepare("SELECT model,SUM(input_tokens) input_tokens,SUM(output_tokens) output_tokens,SUM(reasoning_tokens) reasoning_tokens,SUM(cached_tokens) cached_tokens FROM ai_usage GROUP BY model").all<{ model: string; input_tokens: number; output_tokens: number; reasoning_tokens: number; cached_tokens: number }>(),
       env.DB.prepare("SELECT tool_name,status,COUNT(*) count,COALESCE(AVG(duration_ms),0) average_duration_ms FROM ai_tool_calls GROUP BY tool_name,status").all<{ tool_name: string; status: string; count: number; average_duration_ms: number }>(),
       env.DB.prepare("SELECT rating,COUNT(*) count FROM ai_feedback GROUP BY rating").all<{ rating: number; count: number }>(),
@@ -27,7 +26,6 @@ export async function GET() {
       dynamic.push(`fate_queue_oldest_age_seconds{queue="${label(row.queue)}",status="${label(row.status)}"} ${Math.max(0, row.oldest)}`);
     }
     dynamic.push(`fate_active_sessions ${sessions?.sessions ?? 0}`);
-    dynamic.push(`fate_cache_entries{state="live"} ${cache?.cache_live ?? 0}`, `fate_cache_entries{state="total"} ${cache?.cache_total ?? 0}`);
     const inputPrice = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25);
     const outputPrice = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
     let estimatedCost = 0;

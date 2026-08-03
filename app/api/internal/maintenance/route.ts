@@ -12,8 +12,6 @@ export async function POST(request: Request) {
     env.DB.prepare("DELETE FROM wallet_auth_challenges WHERE expires_at < ?").bind(now - 3600),
     env.DB.prepare("DELETE FROM wallet_sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)").bind(now - 86400, now - 86400),
     env.DB.prepare("DELETE FROM rate_limit_buckets WHERE expires_at < ?").bind(now),
-    env.DB.prepare("DELETE FROM response_cache WHERE expires_at < ?").bind(now),
-    env.DB.prepare("DELETE FROM distributed_leases WHERE expires_at < ?").bind(now - 3600),
     env.DB.prepare("UPDATE transaction_operations SET status = 'expired', updated_at = CURRENT_TIMESTAMP WHERE status IN ('draft','awaiting_signature') AND expires_at < ?").bind(now),
     env.DB.prepare("DELETE FROM background_jobs WHERE status = 'complete' AND updated_at < datetime('now', '-7 days')"),
     env.DB.prepare("DELETE FROM event_logs WHERE created_at < datetime('now', '-90 days')"),

@@ -23,7 +23,7 @@ export default function FateCopilot({ walletAddress }: { walletAddress: string |
   const clearConversation = useCallback(() => { abortRef.current?.abort(); abortRef.current = null; setConversationId(""); setMessages([WELCOME]); setInput(""); setBusy(false); setTab("copilot"); sessionStorage.removeItem("fate.ai.conversation"); sessionStorage.removeItem("fate.ai.messages"); }, []);
   const closeCopilot = useCallback(() => { clearConversation(); setOpen(false); window.setTimeout(() => launcherRef.current?.focus(), 0); }, [clearConversation]);
 
-  useEffect(() => { sessionStorage.removeItem("fate.ai.conversation"); sessionStorage.removeItem("fate.ai.messages"); void fetch("/api/ai/status").then(response => response.json()).then((value: { enabled?: boolean }) => setAvailable(Boolean(value.enabled))).catch(() => setAvailable(false)); return () => abortRef.current?.abort(); }, []);
+  useEffect(() => { sessionStorage.removeItem("fate.ai.conversation"); sessionStorage.removeItem("fate.ai.messages"); void fetch("/api/ai/status").then(response => response.json()).then(value => setAvailable(Boolean((value as { enabled?: boolean }).enabled))).catch(() => setAvailable(false)); return () => abortRef.current?.abort(); }, []);
   useEffect(() => { if (!open) return; const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); closeCopilot(); } }; document.addEventListener("keydown", onKeyDown); return () => document.removeEventListener("keydown", onKeyDown); }, [closeCopilot, open]);
 
   async function send(message = input, fresh = false) {

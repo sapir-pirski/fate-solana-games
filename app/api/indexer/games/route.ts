@@ -14,11 +14,6 @@ export async function GET(request: Request) {
   }
 
   await Promise.all([ensureAuthSchema(), ensureGameSchema()]);
-  const cacheKey = `games:${type ?? "all"}:${state ?? "all"}:${wallet ?? "all"}`;
-  const now = Math.floor(Date.now() / 1000);
-  const cached = await env.DB.prepare("SELECT value_json FROM response_cache WHERE key=? AND expires_at>?").bind(cacheKey, now).first<{ value_json: string }>();
-  if (cached) return Response.json(JSON.parse(cached.value_json), { headers: { "cache-control": "private, max-age=0", "x-fate-cache": "hit" } });
-
   const predicates: string[] = [];
   const bindings: string[] = [];
   if (type) { predicates.push("game_type=?"); bindings.push(type); }
@@ -32,6 +27,5 @@ export async function GET(request: Request) {
   const games = (await env.DB.prepare(query).bind(...bindings).all()).results;
   const cursor = await env.DB.prepare("SELECT last_slot,updated_at FROM indexer_checkpoints WHERE consumer=?").bind(`fate-program:${process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet"}`).first<{ last_slot: number; updated_at: string }>();
   const payload = { games, commitment: "finalized", indexedSlot: cursor?.last_slot ?? null, indexedAt: cursor?.updated_at ?? new Date().toISOString() };
-  await env.DB.prepare("INSERT INTO response_cache (key,value_json,expires_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,expires_at=excluded.expires_at,updated_at=CURRENT_TIMESTAMP").bind(cacheKey, JSON.stringify(payload), now + 3).run();
-  return Response.json(payload, { headers: { "cache-control": "private, max-age=0", "x-fate-cache": "miss" } });
+  return Response.json(payload, { headers: { "cache-control": "private, no-store" } });
 }

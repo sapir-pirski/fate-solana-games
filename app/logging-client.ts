@@ -9,6 +9,7 @@ export type LogInput = {
   status?: "info" | "pending" | "success" | "failure";
   gameType?: GameView;
   gameId?: string;
+  walletAddress?: string;
   amountLamports?: number;
   transactionSignature?: string;
   metadata?: Record<string, string | number | boolean>;

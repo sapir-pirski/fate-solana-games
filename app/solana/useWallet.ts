@@ -13,14 +13,21 @@ import {
 import { SolanaSignAndSendTransaction, SolanaSignMessage, type SolanaSignAndSendTransactionFeature, type SolanaSignMessageFeature } from "@solana/wallet-standard-features";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { serializeLamports, type GameAction, type GameType } from "@/lib/transactions";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CHAIN = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export type TransactionState = "draft"|"awaiting_signature"|"submitted"|"confirmed"|"finalized"|"rejected"|"failed"|"expired"|"unknown";
-type OperationInput={operationId:string;gameType:"jackpot"|"coinflip"|"daily";action:"enter_jackpot"|"create_coinflip"|"join_coinflip"|"open_daily";amountLamports:number};
-type CompatibleWallet = Wallet & StandardConnectFeature & SolanaSignAndSendTransactionFeature & SolanaSignMessageFeature & Partial<StandardDisconnectFeature & StandardEventsFeature>;
+type OperationInput={operationId:string;gameType:GameType;action:GameAction;amountLamports:bigint};
+type CompatibleWalletFeatures =
+  StandardConnectFeature &
+  SolanaSignAndSendTransactionFeature &
+  SolanaSignMessageFeature &
+  Partial<StandardDisconnectFeature> &
+  Partial<StandardEventsFeature>;
+type CompatibleWallet = Wallet & { readonly features: Wallet["features"] & CompatibleWalletFeatures };
 
 function isCompatible(wallet: Wallet): wallet is CompatibleWallet {
   return CHAIN === "solana:devnet" || wallet.chains.includes(CHAIN as `${string}:${string}`)
@@ -61,7 +68,7 @@ export function useSolanaWallet() {
       if (!response.ok) throw new Error("RPC balance request failed.");
       const payload = await response.json() as { result?: { value?: number }; error?: unknown };
       const lamports = payload.result?.value;
-      if (!Number.isSafeInteger(lamports)) throw new Error("RPC returned an invalid balance.");
+      if (typeof lamports !== "number" || !Number.isSafeInteger(lamports)) throw new Error("RPC returned an invalid balance.");
       setBalance(lamports / LAMPORTS_PER_SOL);
     } catch {
       setBalance(null);
@@ -109,7 +116,8 @@ export function useSolanaWallet() {
   const disconnect = useCallback(async () => {
     try {
       await fetch("/api/auth/session",{method:"DELETE"}).catch(()=>undefined);
-      if (wallet && StandardDisconnect in wallet.features) await wallet.features[StandardDisconnect].disconnect();
+      const disconnectFeature = wallet?.features[StandardDisconnect];
+      if (disconnectFeature) await disconnectFeature.disconnect();
     } finally {
       setWallet(null);
       setAccount(null);
@@ -120,7 +128,8 @@ export function useSolanaWallet() {
 
   const sendTransaction = useCallback(async (transaction: Transaction, operation:OperationInput, onStatus?: (status: "awaiting_approval" | "submitted" | "confirmed" | "finalized") => void) => {
     if (!wallet || !account || !authenticated) throw new Error("Connect and authenticate a compatible Solana wallet first.");
-    const create=await fetch("/api/transactions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operation)});if(!create.ok){const failure=await create.json().catch(()=>({})) as {code?:string};const messages:Record<string,string>={AGE_ATTESTATION_REQUIRED:"Complete the Safety & privacy eligibility check first.",CONSENT_RENEWAL_REQUIRED:"Review and renew the current policies first.",JURISDICTION_BLOCKED:"This service is unavailable in your declared jurisdiction.",COMPLIANCE_REVIEW_REQUIRED:"Eligibility requires review before playing.",SELF_EXCLUDED:"Self-exclusion is active for this wallet.",COOLDOWN_ACTIVE:"A cooling-off period is active for this wallet.",DAILY_LIMIT_EXCEEDED:"Your daily play limit would be exceeded.",WEEKLY_LIMIT_EXCEEDED:"Your weekly play limit would be exceeded.",MAINNET_DISABLED_PENDING_LICENSE:"Mainnet is disabled pending licensing."};throw new Error(messages[failure.code??""]??"Could not create an idempotent transaction operation.");}
+    const operationPayload={...operation,amountLamports:serializeLamports(operation.amountLamports)};
+    const create=await fetch("/api/transactions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operationPayload)});if(!create.ok){const failure=await create.json().catch(()=>({})) as {code?:string};const messages:Record<string,string>={AGE_ATTESTATION_REQUIRED:"Complete the Safety & privacy eligibility check first.",CONSENT_RENEWAL_REQUIRED:"Review and renew the current policies first.",JURISDICTION_BLOCKED:"This service is unavailable in your declared jurisdiction.",COMPLIANCE_REVIEW_REQUIRED:"Eligibility requires review before playing.",SELF_EXCLUDED:"Self-exclusion is active for this wallet.",COOLDOWN_ACTIVE:"A cooling-off period is active for this wallet.",DAILY_LIMIT_EXCEEDED:"Your daily play limit would be exceeded.",WEEKLY_LIMIT_EXCEEDED:"Your weekly play limit would be exceeded.",MAINNET_DISABLED_PENDING_LICENSE:"Mainnet is disabled pending licensing."};throw new Error(messages[failure.code??""]??"Could not create an idempotent transaction operation.");}
     const rpcUrls=[rpcUrl,...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS??"").split(",")].filter((value,index,all)=>value&&all.indexOf(value)===index);
     const connection = new Connection(rpcUrls[0], "confirmed");
     const latest = await connection.getLatestBlockhash("confirmed");
@@ -151,8 +160,9 @@ export function useSolanaWallet() {
   useEffect(()=>{localStorage.setItem("fate_transaction_operations",JSON.stringify(operations.slice(0,100)));},[operations]);
 
   useEffect(() => {
-    if (!wallet || !(StandardEvents in wallet.features)) return;
-    return wallet.features[StandardEvents].on("change", ({ accounts }) => {
+    const eventsFeature = wallet?.features[StandardEvents];
+    if (!eventsFeature) return;
+    return eventsFeature.on("change", ({ accounts }) => {
       if (!accounts) return;
       const next = accounts.find(item => item.chains.includes(CHAIN as `${string}:${string}`)) ?? null;
       setAccount(next);
