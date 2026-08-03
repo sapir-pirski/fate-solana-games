@@ -45,6 +45,7 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
 test("coinflip empty state is readable and points to creation", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.route("**/api/indexer/games?type=coinflip&state=open", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
+  await page.route("**/api/indexer/games?type=coinflip&state=settled", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
   await page.goto("/coinflip");
   await expect(page.getByText("NO OPEN FLIPS", { exact: true })).toBeVisible();
   const emptyState = page.locator(".flip-empty");
@@ -64,6 +65,9 @@ test("coinflip empty state is readable and points to creation", async ({ page })
   await expect(setup.locator("#coin-wager")).toHaveValue("0.50");
   await page.keyboard.press("Escape");
   await expect(setup).toBeHidden();
+  await expect(page.getByText("No finalized flips indexed", { exact: true })).toBeVisible();
+  await expect(page.getByText("3Qm8...pL0f", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("No fairness proof available", { exact: true })).toBeVisible();
   await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
 });
 
