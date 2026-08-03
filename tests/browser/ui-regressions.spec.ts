@@ -86,6 +86,15 @@ test("coinflip setup opens without JavaScript hydration", async ({ browser }) =>
   await context.close();
 });
 
+test("daily case history never shows sample rewards", async ({ page }) => {
+  await page.goto("/daily-case");
+  await expect(page.getByText("Connect wallet to view your opens", { exact: true })).toBeVisible();
+  await expect(page.getByText("No fairness proof available", { exact: true })).toBeVisible();
+  await expect(page.getByText("Yesterday", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Jul 29", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("LAST 3", { exact: true })).toHaveCount(0);
+});
+
 test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
   await page.goto("/");
   const copilot = page.locator(".copilot-launcher");
