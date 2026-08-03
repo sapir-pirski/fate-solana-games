@@ -19,8 +19,6 @@ services:
       NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
       NEXT_PUBLIC_FATE_PROGRAM_ID: ${NEXT_PUBLIC_FATE_PROGRAM_ID:?Set NEXT_PUBLIC_FATE_PROGRAM_ID in local.env}
-      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-      FATE_PROGRAM_ID: ${FATE_PROGRAM_ID:?Set FATE_PROGRAM_ID in local.env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
       OTEL_SERVICE_NAME: fate-platform

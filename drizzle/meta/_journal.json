@@ -29,6 +29,13 @@
       "when": 1785591957868,
       "tag": "0003_giant_barracuda",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785784617860,
+      "tag": "0004_fat_ozymandias",
+      "breakpoints": true
     }
   ]
 }

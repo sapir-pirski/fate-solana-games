@@ -25,20 +25,7 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-bookworm
-        env:
-          POSTGRES_DB: fate_test
-          POSTGRES_USER: fate_test
-          POSTGRES_PASSWORD: fate_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U fate_test -d fate_test"
-          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      DATABASE_URL: postgresql://fate_test:fate_test@127.0.0.1:5432/fate_test
-      DATABASE_SSL: disable
       NEXT_PUBLIC_SOLANA_CLUSTER: devnet
       NEXT_PUBLIC_FATE_PROGRAM_ID: Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ
     steps:
@@ -50,17 +37,7 @@ jobs:
 
   browser-contract:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-bookworm
-        env: { POSTGRES_DB: fate_test, POSTGRES_USER: fate_test, POSTGRES_PASSWORD: fate_test }
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U fate_test -d fate_test"
-          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      DATABASE_URL: postgresql://fate_test:fate_test@127.0.0.1:5432/fate_test
-      DATABASE_SSL: disable
       NEXT_PUBLIC_SOLANA_CLUSTER: devnet
       NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
       NEXT_PUBLIC_FATE_PROGRAM_ID: Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ

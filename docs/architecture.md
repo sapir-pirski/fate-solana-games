@@ -11,9 +11,8 @@ FATE is split by responsibility so custody and game rules cannot accidentally le
 - `lib/` contains environment-neutral clients, contracts, validation and utilities.
 - `server/services/` is the application-service boundary used by API handlers.
 - `db/` owns the canonical Drizzle schema and the sole D1 connection.
-- `indexer/` contains environment-neutral Solana decoding, RPC failover and retry utilities used by D1-backed application workflows.
 - `programs/` owns Anchor programs and on-chain custody rules.
-- `infra/` documents provider-neutral deployment and observability assets.
+- `deploy/local/` contains the local observability stack and dashboards.
 
 ## Trust boundaries
 
@@ -21,7 +20,7 @@ The browser may prepare and request transactions but never holds treasury, oracl
 
 ## Dependency direction
 
-`app routes -> features/components -> lib contracts` for browser code and `app API -> server services -> db/indexer` for server code. Features and components are linted against importing server, database or API internals.
+`app routes -> features/components -> lib contracts` for browser code and `app API -> server services -> db` for server code. Features and components are linted against importing server, database or API internals.
 
 ## Release units
 

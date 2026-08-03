@@ -21,7 +21,6 @@ const allowedVariables = [
   "OPENAI_MODEL",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_SERVICE_NAME",
-  "SOLANA_RPC_URL",
 ];
 
 const config = JSON.parse(await readFile(sourceConfig, "utf8"));

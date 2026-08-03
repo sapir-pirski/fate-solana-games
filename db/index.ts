@@ -107,9 +107,6 @@ export async function ensureAuthSchema() {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets (expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS background_jobs (id TEXT PRIMARY KEY, queue TEXT NOT NULL, dedupe_key TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8, available_at INTEGER NOT NULL, lease_owner TEXT, lease_expires_at INTEGER, last_error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(queue,dedupe_key))"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS background_jobs_claim_idx ON background_jobs (queue,status,available_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS distributed_leases (name TEXT PRIMARY KEY, owner TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS response_cache (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS response_cache_expiry_idx ON response_cache (expires_at)"),
   ]).catch((error: unknown) => { authSchemaReady = null; throw error; });
   await authSchemaReady;
 }

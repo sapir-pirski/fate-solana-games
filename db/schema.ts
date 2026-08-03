@@ -157,14 +157,6 @@ export const backgroundJobs = sqliteTable("background_jobs", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, table => [uniqueIndex("background_jobs_dedupe_uidx").on(table.queue,table.dedupeKey),index("background_jobs_claim_idx").on(table.queue,table.status,table.availableAt)]);
 
-export const distributedLeases = sqliteTable("distributed_leases", {
-  name: text("name").primaryKey(), owner: text("owner").notNull(), tokenHash: text("token_hash").notNull(), expiresAt: integer("expires_at").notNull(), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
-
-export const responseCache = sqliteTable("response_cache", {
-  key: text("key").primaryKey(), valueJson: text("value_json").notNull(), expiresAt: integer("expires_at").notNull(), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table=>[index("response_cache_expiry_idx").on(table.expiresAt)]);
-
 export const indexerCheckpoints = sqliteTable("indexer_checkpoints", {
   consumer: text("consumer").primaryKey(),
   lastSignature: text("last_signature"),
