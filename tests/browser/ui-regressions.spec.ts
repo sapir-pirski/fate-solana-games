@@ -41,6 +41,19 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
   await expect(page.getByRole("button", { name: /View transaction/ })).toHaveCount(0);
 });
 
+test("coinflip empty state is readable and points to creation", async ({ page }) => {
+  await page.route("**/api/indexer/games?type=coinflip&state=open", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
+  await page.goto("/coinflip");
+  await expect(page.getByText("NO OPEN FLIPS", { exact: true })).toBeVisible();
+  const emptyState = page.locator(".flip-empty");
+  await expect(emptyState.getByText("No open coinflips yet", { exact: true })).toBeVisible();
+  const textBox = await emptyState.getByText("Create the first challenge and wait for another player to join.").boundingBox();
+  expect(textBox && textBox.width > 180).toBeTruthy();
+  await emptyState.getByRole("button", { name: "Create a coinflip" }).click();
+  await expect(page.locator("#coin-wager")).toBeFocused();
+  await expect(page.getByText("FINALIZED", { exact: true })).toHaveCount(0);
+});
+
 test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
   await page.goto("/");
   const copilot = page.locator(".copilot-launcher");
