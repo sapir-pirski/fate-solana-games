@@ -106,6 +106,28 @@ test("history explains the disconnected empty state", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Connect a wallet" })).toBeVisible();
 });
 
+test("fairness verifier validates Solana addresses inline", async ({ page }) => {
+  await page.goto("/verify");
+  const address = page.getByLabel("Game account address");
+  const verify = page.getByRole("button", { name: "Verify fairness" });
+
+  await expect(verify).toBeDisabled();
+  await expect(page.getByText("Enter a Solana game account address to begin.")).toBeVisible();
+
+  await address.fill("not-a-solana-address");
+  await expect(address).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Enter a valid base58 Solana account address.")).toBeVisible();
+  await expect(verify).toBeDisabled();
+
+  await address.fill("11111111111111111111111111111111");
+  await expect(address).toHaveAttribute("aria-invalid", "false");
+  await expect(page.getByText("Valid Solana account address.")).toBeVisible();
+  await expect(verify).toBeEnabled();
+
+  await page.getByRole("button", { name: "Daily Case" }).click();
+  await expect(page.getByRole("button", { name: "Daily Case" })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
   await page.goto("/");
   const copilot = page.locator(".copilot-launcher");
