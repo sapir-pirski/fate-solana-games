@@ -95,6 +95,17 @@ test("daily case history never shows sample rewards", async ({ page }) => {
   await expect(page.getByText("LAST 3", { exact: true })).toHaveCount(0);
 });
 
+test("history explains the disconnected empty state", async ({ page }) => {
+  await page.goto("/history");
+  await expect(page.getByText("Connect wallet to view your history", { exact: true })).toBeVisible();
+  await expect(page.getByText("Wallet required", { exact: true })).toBeVisible();
+  await expect(page.getByText("Indexed games", { exact: true }).locator("..").getByText("—", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All games" })).toBeDisabled();
+  await expect(page.getByText("GAME", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Connect wallet", exact: true }).last().click();
+  await expect(page.getByRole("dialog", { name: "Connect a wallet" })).toBeVisible();
+});
+
 test("copilot floats without collision and safety lives in the footer", async ({ page }) => {
   await page.goto("/");
   const copilot = page.locator(".copilot-launcher");
