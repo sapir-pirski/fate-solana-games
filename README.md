@@ -88,8 +88,9 @@ This project is available under the [MIT License](LICENSE).
 The public VM-free deployment is hosted on Sites at
 `https://fate-solana-games.sapirp.chatgpt.site`, with its managed D1-compatible
 database and server-side secrets. Scheduled GitHub Actions run production smoke
-checks, idempotent retention maintenance, and a daily JSON backup retained as a
-private workflow artifact. Configure the same random `AUTOMATION_TOKEN` in the
+checks, lease-based Solana transaction confirmation, idempotent retention
+maintenance, and a daily JSON backup retained as a private workflow artifact.
+Configure the same random `AUTOMATION_TOKEN` in the
 hosting environment and the `FATE_AUTOMATION_TOKEN` GitHub repository secret.
 
 Object storage is intentionally not provisioned because FATE has no user-file

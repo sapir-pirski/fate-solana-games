@@ -57,6 +57,22 @@ groups:
           summary: Transaction recovery backlog is elevated
           impact: Wallet transaction finality may be delayed.
           runbook_url: https://github.com/fate/runbooks#transaction-recovery
+      - alert: FateTransactionConfirmationDeadLetters
+        expr: sum(fate_queue_jobs{queue="transaction-confirmation",status="dead"}) > 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Transaction confirmations reached their retry limit
+          impact: One or more wallet operations require manual reconciliation.
+          runbook_url: https://github.com/fate/runbooks#transaction-confirmation-dead-letters
+      - alert: FateTransactionConfirmationStalled
+        expr: max(fate_queue_oldest_age_seconds{queue="transaction-confirmation",status=~"pending|running"}) > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Transaction confirmation processing is stalled
+          impact: Submitted wallet transactions are not reaching final state promptly.
+          runbook_url: https://github.com/fate/runbooks#transaction-confirmation-stalled
       - alert: FateSolanaRpcUnavailable
         expr: fate_solana_rpc_providers_available < 1
         for: 2m

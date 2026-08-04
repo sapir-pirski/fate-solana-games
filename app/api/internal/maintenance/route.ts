@@ -1,12 +1,14 @@
 import { env } from "cloudflare:workers";
 import { authorizeAutomation, unauthorized } from "@/server/services/internal-api";
 import { ensureAuthSchema, ensureEventLogSchema } from "../../../../db";
+import { processTransactionConfirmationJobs } from "@/server/services/transaction-confirmation";
 
 export async function POST(request: Request) {
   if (!authorizeAutomation(request)) return unauthorized();
   if (!env.DB) return Response.json({ code: "DATABASE_UNAVAILABLE" }, { status: 503 });
 
   await Promise.all([ensureAuthSchema(), ensureEventLogSchema()]);
+  const confirmations = await processTransactionConfirmationJobs({ db: env.DB, limit: 20 });
   const now = Math.floor(Date.now() / 1000);
   const results = await env.DB.batch([
     env.DB.prepare("DELETE FROM wallet_auth_challenges WHERE expires_at < ?").bind(now - 3600),
@@ -20,6 +22,7 @@ export async function POST(request: Request) {
   return Response.json({
     status: "ok",
     timestamp: new Date().toISOString(),
+    confirmations,
     changes: results.map((result) => result.meta.changes ?? 0),
   }, { headers: { "cache-control": "no-store" } });
 }
