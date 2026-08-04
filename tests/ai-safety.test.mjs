@@ -19,6 +19,12 @@ test("Responses calls are stateless and tool rounds are bounded", async () => {
   assert.match(route, /authenticatedWallet/);
   assert.match(route, /enforceRateLimit/);
   assert.match(route, /AI_MAX_TOKENS_PER_WALLET_DAY/);
+  assert.match(route, /recordProviderUsage\(response/);
+  assert.match(route, /round: 0/);
+  assert.match(route, /round: toolRounds/);
+  assert.match(route, /unixepoch\(created_at\)>=unixepoch\('now','start of day'\)/);
+  assert.match(route, /unixepoch\(created_at\)>=unixepoch\('now','start of month'\)/);
+  assert.match(route, /onConflictDoNothing\(\{ target: aiUsage\.responseId \}\)/);
 });
 
 test("saved AI conversations are scoped to the authenticated wallet", async () => {

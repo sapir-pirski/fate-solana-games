@@ -111,6 +111,13 @@ export async function ensureAiSchema() {
     if (messageColumns.results.length && !messageColumns.results.some(column => column.name === "feedback_token_hash")) {
       await env.DB.prepare("ALTER TABLE ai_messages ADD COLUMN feedback_token_hash TEXT").run();
     }
+    const usageColumns = await env.DB.prepare("PRAGMA table_info(ai_usage)").all<{ name: string }>();
+    const usageNames = new Set(usageColumns.results.map(column => column.name));
+    if (usageNames.size) {
+      if (!usageNames.has("request_id")) await env.DB.prepare("ALTER TABLE ai_usage ADD COLUMN request_id TEXT NOT NULL DEFAULT 'legacy'").run();
+      if (!usageNames.has("response_id")) await env.DB.prepare("ALTER TABLE ai_usage ADD COLUMN response_id TEXT").run();
+      if (!usageNames.has("round")) await env.DB.prepare("ALTER TABLE ai_usage ADD COLUMN round INTEGER NOT NULL DEFAULT 0").run();
+    }
     return env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_conversations (id TEXT PRIMARY KEY NOT NULL, wallet_address TEXT, owner_key TEXT NOT NULL DEFAULT 'legacy', title TEXT NOT NULL DEFAULT 'FATE Copilot', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_conversations_wallet_idx ON ai_conversations (wallet_address, updated_at)"),
@@ -119,8 +126,10 @@ export async function ensureAiSchema() {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_messages_conversation_idx ON ai_messages (conversation_id, created_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_tool_calls (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, call_id TEXT NOT NULL, tool_name TEXT NOT NULL, arguments_json TEXT NOT NULL, result_json TEXT, status TEXT NOT NULL, duration_ms INTEGER, error_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ai_tool_calls_call_uidx ON ai_tool_calls (call_id)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT, wallet_hash TEXT, model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, cached_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT, wallet_hash TEXT, request_id TEXT NOT NULL DEFAULT 'legacy', response_id TEXT, round INTEGER NOT NULL DEFAULT 0, model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, cached_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_usage_wallet_created_idx ON ai_usage (wallet_hash, created_at)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_usage_created_idx ON ai_usage (created_at)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ai_usage_response_uidx ON ai_usage (response_id)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_feedback (id TEXT PRIMARY KEY NOT NULL, message_id TEXT NOT NULL, wallet_hash TEXT, rating INTEGER NOT NULL, reason TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ai_feedback_message_wallet_uidx ON ai_feedback (message_id, wallet_hash)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS responsible_play_limits (wallet_address TEXT PRIMARY KEY NOT NULL, daily_lamports INTEGER, weekly_lamports INTEGER, cooldown_until INTEGER, self_excluded_until INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),

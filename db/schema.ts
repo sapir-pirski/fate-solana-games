@@ -167,9 +167,9 @@ export const aiToolCalls = sqliteTable("ai_tool_calls", {
 }, table => [uniqueIndex("ai_tool_calls_call_uidx").on(table.callId), index("ai_tool_calls_conversation_idx").on(table.conversationId, table.createdAt)]);
 
 export const aiUsage = sqliteTable("ai_usage", {
-  id: text("id").primaryKey(), conversationId: text("conversation_id"), walletHash: text("wallet_hash"), model: text("model").notNull(),
+  id: text("id").primaryKey(), conversationId: text("conversation_id"), walletHash: text("wallet_hash"), requestId: text("request_id").notNull().default("legacy"), responseId: text("response_id"), round: integer("round").notNull().default(0), model: text("model").notNull(),
   inputTokens: integer("input_tokens").notNull().default(0), outputTokens: integer("output_tokens").notNull().default(0), reasoningTokens: integer("reasoning_tokens").notNull().default(0), cachedTokens: integer("cached_tokens").notNull().default(0), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table => [index("ai_usage_wallet_created_idx").on(table.walletHash, table.createdAt)]);
+}, table => [index("ai_usage_wallet_created_idx").on(table.walletHash, table.createdAt), index("ai_usage_created_idx").on(table.createdAt), uniqueIndex("ai_usage_response_uidx").on(table.responseId)]);
 
 export const aiFeedback = sqliteTable("ai_feedback", {
   id: text("id").primaryKey(), messageId: text("message_id").notNull(), walletHash: text("wallet_hash"), rating: integer("rating").notNull(), reason: text("reason"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

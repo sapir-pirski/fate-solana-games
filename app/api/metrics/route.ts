@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { ensureAiSchema, ensureAuthSchema, ensureGameSchema, getDatabaseBackend } from "../../../db";
 import { renderMetrics } from "../../../lib/telemetry";
+import { estimateAiCostUsd } from "../../../lib/ai/usage";
 
 const label = (value: unknown) => String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n");
 
@@ -32,6 +33,7 @@ export async function GET() {
     dynamic.push(`fate_indexer_healthy{cluster="${label(cluster)}"} ${indexer?.status === "healthy" ? 1 : 0}`);
     dynamic.push(`fate_indexer_lag_seconds{cluster="${label(cluster)}"} ${indexer?.lag_seconds ?? 0}`);
     const inputPrice = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25);
+    const cachedInputPrice = Number(process.env.AI_CACHED_INPUT_USD_PER_MILLION_TOKENS ?? 0.125);
     const outputPrice = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
     let estimatedCost = 0;
     for (const row of aiUsage.results) {
@@ -40,7 +42,7 @@ export async function GET() {
       dynamic.push(`fate_ai_tokens{model="${model}",type="output"} ${row.output_tokens ?? 0}`);
       dynamic.push(`fate_ai_tokens{model="${model}",type="reasoning"} ${row.reasoning_tokens ?? 0}`);
       dynamic.push(`fate_ai_tokens{model="${model}",type="cached"} ${row.cached_tokens ?? 0}`);
-      estimatedCost += (row.input_tokens ?? 0) * inputPrice / 1_000_000 + (row.output_tokens ?? 0) * outputPrice / 1_000_000;
+      estimatedCost += estimateAiCostUsd({ inputTokens: row.input_tokens ?? 0, outputTokens: row.output_tokens ?? 0, cachedTokens: row.cached_tokens ?? 0 }, inputPrice, outputPrice, cachedInputPrice);
     }
     for (const row of aiTools.results) {
       dynamic.push(`fate_ai_tool_calls{tool="${label(row.tool_name)}",status="${label(row.status)}"} ${row.count}`);

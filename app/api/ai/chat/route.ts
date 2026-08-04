@@ -1,16 +1,37 @@
 import OpenAI from "openai";
-import { and, asc, eq, gte } from "drizzle-orm";
-import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
+import { and, asc, eq } from "drizzle-orm";
+import { ensureAiSchema, getD1, getDb, withDatabase } from "../../../../db";
 import { aiConversations, aiMessages, aiToolCalls, aiUsage } from "../../../../db/schema";
 import { FATE_AI_SYSTEM_PROMPT, BASE58, redactError, safeModel, validatePrompt, walletHash } from "../../../../lib/ai/policy";
 import { AI_TOOLS, executeAiTool } from "../../../../lib/ai/tools";
 import { AI_ANONYMOUS_COOKIE, aiAnonymousCookie, authenticatedWallet, parseCookie, randomToken, requireSameOrigin, sha256 } from "@/server/services/auth";
 import { enforceRateLimit, rateLimitResponse } from "@/server/services/coordination";
 import { increment, jsonLog, observe, withSpan } from "../../../../lib/telemetry";
+import { addAiUsage, EMPTY_AI_USAGE, estimateAiCostUsd, normalizeAiUsage, type AiUsageTotals, type ProviderUsage } from "../../../../lib/ai/usage";
 
 const MAX_MESSAGE = 2_000;
 const MAX_TOOL_ROUNDS = 3;
 const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function usageBudgetResponse(rateKey: string, requestId: string) {
+  const [daily, monthly] = await Promise.all([
+    getD1().prepare("SELECT COALESCE(SUM(input_tokens),0) input_tokens,COALESCE(SUM(output_tokens),0) output_tokens FROM ai_usage WHERE wallet_hash=? AND unixepoch(created_at)>=unixepoch('now','start of day')").bind(rateKey).first<{ input_tokens: number; output_tokens: number }>(),
+    getD1().prepare("SELECT COALESCE(SUM(input_tokens),0) input_tokens,COALESCE(SUM(output_tokens),0) output_tokens,COALESCE(SUM(cached_tokens),0) cached_tokens FROM ai_usage WHERE unixepoch(created_at)>=unixepoch('now','start of month')").first<{ input_tokens: number; output_tokens: number; cached_tokens: number }>(),
+  ]);
+  const dailyTokens = (daily?.input_tokens ?? 0) + (daily?.output_tokens ?? 0);
+  const dailyTokenLimit = Math.max(1_000, Number(process.env.AI_MAX_TOKENS_PER_WALLET_DAY ?? 100_000));
+  if (dailyTokens >= dailyTokenLimit) return Response.json({ code: "AI_TOKEN_BUDGET_EXCEEDED", message: "Your daily Copilot allowance has been reached.", requestId }, { status: 429, headers: { "retry-after": "3600" } });
+  const monthlyCost = estimateAiCostUsd({ inputTokens: monthly?.input_tokens ?? 0, outputTokens: monthly?.output_tokens ?? 0, cachedTokens: monthly?.cached_tokens ?? 0 }, Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25), Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10), Number(process.env.AI_CACHED_INPUT_USD_PER_MILLION_TOKENS ?? 0.125));
+  if (monthlyCost >= Math.max(0, Number(process.env.AI_MONTHLY_BUDGET_USD ?? 25))) return Response.json({ code: "AI_SERVICE_BUDGET_EXCEEDED", message: "Copilot has reached its monthly service budget.", requestId }, { status: 503, headers: { "retry-after": "3600" } });
+  return null;
+}
+
+async function recordProviderUsage(response: { id: string; usage?: ProviderUsage }, context: { conversationId: string; walletHash: string; requestId: string; model: string; round: number }): Promise<AiUsageTotals> {
+  const usage = normalizeAiUsage(response.usage);
+  await getDb().insert(aiUsage).values({ id: crypto.randomUUID(), conversationId: context.conversationId, walletHash: context.walletHash, requestId: context.requestId, responseId: response.id, round: context.round, model: context.model, ...usage }).onConflictDoNothing({ target: aiUsage.responseId });
+  return usage;
+}
+
 function streamAnswer(answer: string, metadata: Record<string, unknown>, setCookie?: string) {
   const encoder = new TextEncoder();
   const headers = new Headers({ "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", connection: "keep-alive" });
@@ -49,15 +70,8 @@ async function handlePost(request: Request) {
     if (!apiKey || apiKey.startsWith("replace-")) return Response.json({ code: "AI_NOT_CONFIGURED", message: "Add a server-side OPENAI_API_KEY to .env.local.", requestId }, { status: 503 });
 
     await ensureAiSchema();
-    const now = new Date(); const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString(); const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-    const recentUsage = await getDb().select().from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
-    const identityUsage = recentUsage.filter(item => item.walletHash === rateKey);
-    const dailyTokens = identityUsage.filter(item => item.createdAt >= dayStart).reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0);
-    const dailyTokenLimit = Math.max(1_000, Number(process.env.AI_MAX_TOKENS_PER_WALLET_DAY ?? 100_000));
-    if (dailyTokens >= dailyTokenLimit) return Response.json({ code: "AI_TOKEN_BUDGET_EXCEEDED", message: "Your daily Copilot allowance has been reached.", requestId }, { status: 429, headers: { "retry-after": "3600" } });
-    const inputUsdPerMillion = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25); const outputUsdPerMillion = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
-    const estimatedMonthlyUsd = recentUsage.reduce((sum, item) => sum + item.inputTokens * inputUsdPerMillion / 1_000_000 + item.outputTokens * outputUsdPerMillion / 1_000_000, 0);
-    if (estimatedMonthlyUsd >= Math.max(0, Number(process.env.AI_MONTHLY_BUDGET_USD ?? 25))) return Response.json({ code: "AI_SERVICE_BUDGET_EXCEEDED", message: "Copilot has reached its monthly service budget.", requestId }, { status: 503, headers: { "retry-after": "3600" } });
+    const initialBudgetBlock = await usageBudgetResponse(rateKey, requestId);
+    if (initialBudgetBlock) return initialBudgetBlock;
     const requestedConversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
     if (requestedConversationId && !CONVERSATION_ID.test(requestedConversationId)) {
       return Response.json({ code: "INVALID_CONVERSATION", requestId }, { status: 400 });
@@ -91,10 +105,13 @@ async function handlePost(request: Request) {
     let responseInput: unknown[] = history.map(item => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content }));
     const providerStarted = Date.now();
     let response = await withSpan("ai.provider.response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: rateKey }), request.headers.get("traceparent"));
+    let requestUsage = await recordProviderUsage(response, { conversationId, walletHash: rateKey, requestId, model, round: 0 });
     let toolRounds = 0;
     while (toolRounds < MAX_TOOL_ROUNDS) {
       const calls = response.output.filter(item => item.type === "function_call");
       if (!calls.length) break;
+      const roundBudgetBlock = await usageBudgetResponse(rateKey, requestId);
+      if (roundBudgetBlock) return roundBudgetBlock;
       const outputs: Array<{ type: "function_call_output"; call_id: string; output: string }> = [];
       for (const call of calls) {
         const started = Date.now(); let result: unknown; let status = "success"; let errorCode: string | null = null;
@@ -105,17 +122,16 @@ async function handlePost(request: Request) {
         outputs.push({ type: "function_call_output", call_id: call.call_id, output });
       }
       responseInput = [...responseInput, ...response.output, ...outputs];
-      response = await withSpan("ai.provider.tool_response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: rateKey }), request.headers.get("traceparent"));
       toolRounds += 1;
+      response = await withSpan("ai.provider.tool_response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: rateKey }), request.headers.get("traceparent"));
+      requestUsage = addAiUsage(requestUsage, await recordProviderUsage(response, { conversationId, walletHash: rateKey, requestId, model, round: toolRounds }));
     }
     const answer = response.output_text || "I could not produce a grounded answer. Please try a narrower question.";
     const assistantId = crypto.randomUUID();
     const feedbackToken = randomToken();
     await getDb().insert(aiMessages).values({ id: assistantId, conversationId, role: "assistant", content: answer, model, responseId: response.id, feedbackTokenHash: sha256(feedbackToken) });
-    const usage = response.usage;
-    await getDb().insert(aiUsage).values({ id: crypto.randomUUID(), conversationId, walletHash: rateKey, model, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0, reasoningTokens: usage?.output_tokens_details?.reasoning_tokens ?? 0, cachedTokens: usage?.input_tokens_details?.cached_tokens ?? 0 });
     increment("fate_ai_requests_total", { status: "success", model }); observe("fate_ai_provider_duration_ms", Date.now() - providerStarted, { model });
-    jsonLog("info", "ai_chat_complete", "AI response completed", { component: "ai", requestId, model, toolRounds, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0 });
+    jsonLog("info", "ai_chat_complete", "AI response completed", { component: "ai", requestId, model, toolRounds, inputTokens: requestUsage.inputTokens, outputTokens: requestUsage.outputTokens, cachedTokens: requestUsage.cachedTokens, reasoningTokens: requestUsage.reasoningTokens });
     return streamAnswer(answer, { requestId, conversationId, messageId: assistantId, feedbackToken, model, toolRounds }, anonymousCookieHeader);
   } catch (error) {
     increment("fate_ai_requests_total", { status: "failure" }); jsonLog("error", "ai_chat_failed", "AI response failed", { component: "ai", requestId, errorCode: redactError(error) });
