@@ -41,11 +41,13 @@ const boundedInteger = (value: number | undefined, fallback: number, maximum: nu
 
 function configuredRpcUrls(cluster: string, input?: string[]) {
   const publicEndpoint = cluster === "mainnet-beta" ? "https://api.mainnet-beta.solana.com" : cluster === "testnet" ? "https://api.testnet.solana.com" : "https://api.devnet.solana.com";
+  const publicFallbacks = cluster === "devnet" ? ["https://solana-devnet.api.onfinality.io/public"] : cluster === "mainnet-beta" ? ["https://solana-rpc.publicnode.com"] : [];
   const values = input ?? [
     process.env.SOLANA_RPC_URL,
     process.env.NEXT_PUBLIC_SOLANA_RPC_URL,
     ...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS ?? "").split(","),
     publicEndpoint,
+    ...publicFallbacks,
   ];
   return values.filter((value): value is string => Boolean(value?.trim())).map(value => value.trim()).filter((value, index, all) => all.indexOf(value) === index);
 }
