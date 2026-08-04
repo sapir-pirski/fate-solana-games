@@ -5,6 +5,10 @@ export function supportsConfiguredChain(subject: ChainAware, chain: string) {
   return subject.chains.some(candidate => candidate === chain);
 }
 
+export function isAuthenticatedAccount(accountAddress: string | null | undefined, authenticatedAddress: string | null | undefined) {
+  return Boolean(accountAddress && authenticatedAddress && accountAddress === authenticatedAddress);
+}
+
 export function selectAccountForChain<T extends ChainAccount>(
   accounts: readonly T[],
   chain: string,

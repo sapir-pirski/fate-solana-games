@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const auth=readFileSync(new URL("../lib/auth.ts",import.meta.url),"utf8");
 const wallet=readFileSync(new URL("../app/solana/useWallet.ts",import.meta.url),"utf8");
+const verify=readFileSync(new URL("../app/api/auth/verify/route.ts",import.meta.url),"utf8");
 const transactions=readFileSync(new URL("../app/api/transactions/route.ts",import.meta.url),"utf8");
 const schema=readFileSync(new URL("../db/schema.ts",import.meta.url),"utf8");
 
@@ -34,4 +35,13 @@ test("wallet discovery and account recovery fail closed on the configured chain"
   assert.match(wallet,/selectAccountForChain\(output\.accounts,CHAIN,session\.walletAddress\)/);
   assert.doesNotMatch(wallet,/CHAIN === "solana:devnet"/);
   assert.doesNotMatch(wallet,/output\.accounts\[0\]/);
+});
+
+test("wallet switching cannot retain authentication from another address",()=>{
+  assert.match(wallet,/authenticatedAddress/);
+  assert.match(wallet,/isAuthenticatedAccount\(account\.address,authenticatedAddress\)/);
+  assert.match(wallet,/session\?\.walletAddress!==account\.address/);
+  assert.match(wallet,/setAuthenticatedAddress\(null\)/);
+  assert.match(verify,/previousSession[\s\S]*revokedAt:now/);
+  assert.doesNotMatch(wallet,/setAuthenticated\(true\)/);
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectAccountForChain, supportsConfiguredChain } from "../../lib/solana/wallet-chain.ts";
+import { isAuthenticatedAccount, selectAccountForChain, supportsConfiguredChain } from "../../lib/solana/wallet-chain.ts";
 
 const mainnet = { address: "mainnet-account", chains: ["solana:mainnet"] };
 const devnet = { address: "devnet-account", chains: ["solana:devnet"] };
@@ -17,4 +17,11 @@ test("account selection never falls back to an account on the wrong chain", () =
   assert.equal(selectAccountForChain([mainnet, devnet], "solana:devnet"), devnet);
   assert.equal(selectAccountForChain([mainnet, devnet], "solana:devnet", "mainnet-account"), null);
   assert.equal(selectAccountForChain([mainnet, devnet], "solana:devnet", "devnet-account"), devnet);
+});
+
+test("authentication is bound to the exact displayed account", () => {
+  assert.equal(isAuthenticatedAccount("wallet-a", "wallet-a"), true);
+  assert.equal(isAuthenticatedAccount("wallet-b", "wallet-a"), false);
+  assert.equal(isAuthenticatedAccount(null, "wallet-a"), false);
+  assert.equal(isAuthenticatedAccount("wallet-a", null), false);
 });
