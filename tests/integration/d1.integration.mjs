@@ -33,6 +33,25 @@ test("D1 migrations build the complete single-database schema", () => {
     assert.equal(database.prepare("SELECT last_slot FROM indexer_checkpoints WHERE consumer=?").get("fate-program:devnet").last_slot, 42);
     assert.ok(database.prepare("SELECT due_at FROM privacy_requests WHERE id='legacy-privacy'").get().due_at > 0);
     assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+
+    const schemaSource = readFileSync(new URL("../../db/schema.ts", import.meta.url), "utf8");
+    const bootstrapSource = readFileSync(new URL("../../db/index.ts", import.meta.url), "utf8");
+    const declaredIndexes = new Set([...schemaSource.matchAll(/(?:uniqueIndex|index)\("([a-z0-9_]+)"\)/g)].map((match) => match[1]));
+    const migratedIndexes = new Set(database.prepare("SELECT name FROM sqlite_schema WHERE type='index' AND name NOT LIKE 'sqlite_autoindex_%'").all().map((row) => row.name));
+    const bootstrapDefinitions = new Map([...bootstrapSource.matchAll(/CREATE (UNIQUE )?INDEX IF NOT EXISTS ([a-z0-9_]+) ON ([a-z0-9_]+) \(([^)]+)\)/g)].map((match) => [match[2], {
+      unique: Boolean(match[1]), table: match[3], columns: match[4].split(",").map((column) => column.trim()),
+    }]));
+    const bootstrapIndexes = new Set(bootstrapDefinitions.keys());
+    for (const indexName of declaredIndexes) {
+      assert.ok(migratedIndexes.has(indexName), `generated migrations must create schema index ${indexName}`);
+      assert.ok(bootstrapIndexes.has(indexName), `runtime compatibility bootstrap must create schema index ${indexName}`);
+      const migrated = database.prepare("SELECT tbl_name,sql FROM sqlite_schema WHERE type='index' AND name=?").get(indexName);
+      const columns = database.prepare(`PRAGMA index_info("${indexName}")`).all().map((row) => row.name);
+      assert.deepEqual(bootstrapDefinitions.get(indexName), {
+        unique: migrated.sql.startsWith("CREATE UNIQUE INDEX"), table: migrated.tbl_name, columns,
+      }, `runtime index ${indexName} must match the migrated definition`);
+    }
+    assert.deepEqual([...bootstrapIndexes].sort(), [...declaredIndexes].sort(), "runtime compatibility bootstrap must not define indexes outside the current schema");
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });
