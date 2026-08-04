@@ -37,7 +37,7 @@ test("database backup and restore share a complete manifest and require guarded 
   const manifest = read("lib/database-backup.ts");
   const backup = read("app/api/internal/backup/route.ts");
   const restore = read("app/api/internal/restore/route.ts");
-  for (const table of ["chain_events", "games", "game_entries", "indexer_checkpoints", "wallet_auth_challenges", "rate_limit_buckets", "agent_runs", "agent_alerts"]) {
+  for (const table of ["chain_events", "games", "game_entries", "indexer_checkpoints", "wallet_auth_challenges", "rate_limit_buckets", "agent_runs", "agent_alerts", "privacy_request_artifacts"]) {
     assert.match(manifest, new RegExp(`"${table}"`));
   }
   assert.match(backup, /createDatabaseBackup/);

@@ -201,5 +201,19 @@ export const complianceAuditEvents = sqliteTable("compliance_audit_events", {
 
 export const privacyRequests = sqliteTable("privacy_requests", {
   id: text("id").primaryKey(), walletAddress: text("wallet_address").notNull(), requestType: text("request_type").notNull(), status: text("status").notNull().default("received"),
-  requestedAt: text("requested_at").notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text("completed_at"),
-}, table => [index("privacy_requests_wallet_created_idx").on(table.walletAddress, table.requestedAt)]);
+  requestedAt: text("requested_at").notNull().default(sql`CURRENT_TIMESTAMP`), dueAt: integer("due_at").notNull(), reviewedAt: text("reviewed_at"), completedAt: text("completed_at"),
+  reviewerId: text("reviewer_id"), decisionReason: text("decision_reason"), requestDetailsJson: text("request_details_json").notNull().default("{}"),
+  resultSummaryJson: text("result_summary_json").notNull().default("{}"), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [
+  index("privacy_requests_wallet_created_idx").on(table.walletAddress, table.requestedAt),
+  index("privacy_requests_status_due_idx").on(table.status, table.dueAt),
+]);
+
+export const privacyRequestArtifacts = sqliteTable("privacy_request_artifacts", {
+  id: text("id").primaryKey(), requestId: text("request_id").notNull(), walletAddress: text("wallet_address").notNull(),
+  payloadJson: text("payload_json").notNull(), checksumSha256: text("checksum_sha256").notNull(), expiresAt: integer("expires_at").notNull(),
+  downloadedAt: text("downloaded_at"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [
+  uniqueIndex("privacy_request_artifacts_request_uidx").on(table.requestId),
+  index("privacy_request_artifacts_wallet_expiry_idx").on(table.walletAddress, table.expiresAt),
+]);

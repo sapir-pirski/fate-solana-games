@@ -15,11 +15,12 @@ test("D1 migrations build the complete single-database schema", () => {
         database.prepare("INSERT INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,slot) VALUES (?,?,?,?,?,?,?)").run("legacy-entry-a", "legacy-game", "wallet-a", "player", 1, "shared-signature", 21);
         database.prepare("INSERT INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,slot) VALUES (?,?,?,?,?,?,?)").run("legacy-entry-b", "legacy-game", "wallet-b", "player", 1, "shared-signature", 21);
       }
+      if (file.startsWith("0012_")) database.prepare("INSERT INTO privacy_requests (id,wallet_address,request_type,status) VALUES (?,?,?,?)").run("legacy-privacy", "legacy-wallet", "access", "received");
       const migration = readFileSync(new URL(`../../drizzle/${file}`, import.meta.url), "utf8");
       for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) database.exec(statement);
     }
     const tables = new Set(database.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name));
-    for (const table of ["event_logs", "games", "game_entries", "indexer_checkpoints", "wallet_sessions", "transaction_operations", "ai_conversations", "responsible_play_limits"]) {
+    for (const table of ["event_logs", "games", "game_entries", "indexer_checkpoints", "wallet_sessions", "transaction_operations", "ai_conversations", "responsible_play_limits", "privacy_requests", "privacy_request_artifacts"]) {
       assert.ok(tables.has(table), `${table} must be managed by D1 migrations`);
     }
     for (const removed of ["response_cache", "distributed_leases"]) assert.equal(tables.has(removed), false, `${removed} must remain removed`);
@@ -30,6 +31,7 @@ test("D1 migrations build the complete single-database schema", () => {
     assert.equal(database.prepare("SELECT chain_address FROM games WHERE address='legacy-game'").get().chain_address, "legacy-game");
     assert.equal(database.prepare("SELECT COUNT(*) count FROM game_entries WHERE signature='shared-signature'").get().count, 2);
     assert.equal(database.prepare("SELECT last_slot FROM indexer_checkpoints WHERE consumer=?").get("fate-program:devnet").last_slot, 42);
+    assert.ok(database.prepare("SELECT due_at FROM privacy_requests WHERE id='legacy-privacy'").get().due_at > 0);
     assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   } finally {
     database.close();

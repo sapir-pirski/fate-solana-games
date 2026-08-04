@@ -24,7 +24,10 @@ export default function FateCopilot({ walletAddress }: { walletAddress: string |
   const closeCopilot = useCallback(() => { clearConversation(); setOpen(false); window.setTimeout(() => launcherRef.current?.focus(), 0); }, [clearConversation]);
 
   useEffect(() => { sessionStorage.removeItem("fate.ai.conversation"); sessionStorage.removeItem("fate.ai.messages"); void fetch("/api/ai/status").then(response => response.json()).then(value => setAvailable(Boolean((value as { enabled?: boolean }).enabled))).catch(() => setAvailable(false)); return () => abortRef.current?.abort(); }, []);
-  useEffect(() => { clearConversation(); }, [clearConversation, walletAddress]);
+  useEffect(() => {
+    const reset = window.setTimeout(clearConversation, 0);
+    return () => window.clearTimeout(reset);
+  }, [clearConversation, walletAddress]);
   useEffect(() => { if (!open) return; const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); closeCopilot(); } }; document.addEventListener("keydown", onKeyDown); return () => document.removeEventListener("keydown", onKeyDown); }, [closeCopilot, open]);
 
   async function send(message = input, fresh = false) {

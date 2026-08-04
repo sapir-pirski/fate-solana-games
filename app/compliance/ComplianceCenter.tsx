@@ -11,7 +11,8 @@ type Decision = {
   limits?: { cooldownUntil?: number | null; selfExcludedUntil?: number | null } | null;
 };
 type Restriction = { action: "cooldown" | "self_exclude"; duration: number; label: string };
-type PrivacyReceipt = { type: string; id: string; status: string };
+type PrivacyReceipt = { type: string; id: string; status: string; dueAt?: number; downloadAvailable?: boolean; artifactExpiresAt?: number | null };
+const ACTIVE_PRIVACY_STATES = new Set(["received", "in_review", "approved", "processing"]);
 
 const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(" ");
 
@@ -69,8 +70,12 @@ export default function ComplianceCenter({ authenticated, walletAddress }: { aut
   const refresh = useCallback(async () => {
     if (!authenticated) { setDecision(null); return; }
     try {
-      const payload = await apiRequest<{ decision: Decision }>("/api/compliance/profile", { cache: "no-store" });
+      const [payload, privacy] = await Promise.all([
+        apiRequest<{ decision: Decision }>("/api/compliance/profile", { cache: "no-store" }),
+        apiRequest<{ requests: Array<{ id: string; requestType: string; status: string; dueAt?: number; downloadAvailable?: boolean; artifactExpiresAt?: number | null }> }>("/api/compliance/privacy", { cache: "no-store" }),
+      ]);
       setDecision(payload.decision);
+      setPrivacyReceipts(privacy.requests.map(item => ({ type: item.requestType, ...item })));
       const code = payload.decision.profile?.countryCode ?? "";
       setCountry(code);
       setCountrySearch(code ? `${displayNames.of(code) ?? code} (${code})` : "");
@@ -128,9 +133,9 @@ export default function ComplianceCenter({ authenticated, walletAddress }: { aut
     if (!authenticated) return;
     setBusy(`privacy-${type}`); setStatus("");
     try {
-      const payload = await apiRequest<{ request: { id: string; status: string } }>("/api/compliance/privacy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestType: type }) });
-      setPrivacyReceipts(current => [{ type, id: payload.request.id, status: payload.request.status }, ...current.filter(item => item.type !== type)]);
-      setStatus(`${type[0].toUpperCase()}${type.slice(1)} request received for human review.`);
+      const payload = await apiRequest<{ request: { id: string; status: string; dueAt?: number }; duplicate?: boolean }>("/api/compliance/privacy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestType: type }) });
+      setPrivacyReceipts(current => [{ type, id: payload.request.id, status: payload.request.status, dueAt: payload.request.dueAt }, ...current.filter(item => item.id !== payload.request.id)]);
+      setStatus(payload.duplicate ? `Your active ${type} request is already being reviewed.` : `${type[0].toUpperCase()}${type.slice(1)} request received and queued for review.`);
     } catch (error) { setStatus(error instanceof Error ? error.message : "Privacy request could not be submitted."); }
     finally { setBusy(null); }
   }
@@ -173,9 +178,10 @@ export default function ComplianceCenter({ authenticated, walletAddress }: { aut
           <AnimatePresence>{pendingRestriction && <motion.div className="restriction-confirm" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} role="alertdialog" aria-label="Confirm restriction"><strong>Confirm {pendingRestriction.label}?</strong><span>This starts immediately and cannot be shortened while active.</span><div><button type="button" onClick={() => setPendingRestriction(null)}>Cancel</button><button type="button" className={pendingRestriction.action === "self_exclude" ? "danger" : "confirm"} disabled={busy !== null} onClick={() => void activateRestriction()}>{busy === "restriction" ? "Activating…" : "Activate restriction"}</button></div></motion.div>}</AnimatePresence>
         </div>
 
-        <div className="privacy-actions"><h3>Privacy rights</h3><p>Requests are recorded with a reference ID and sent for human review.</p>{["access", "export", "erasure"].map(type => <button type="button" key={type} disabled={!authenticated || busy !== null || privacyReceipts.some(item => item.type === type)} onClick={() => void requestPrivacy(type)}>{busy === `privacy-${type}` ? "Submitting…" : `${type} request`}</button>)}
+        <div className="privacy-actions"><h3>Privacy rights</h3><p>Requests are recorded, reviewed, processed, and retained with an auditable status.</p>{["access", "export", "erasure"].map(type => <button type="button" key={type} disabled={!authenticated || busy !== null || privacyReceipts.some(item => item.type === type && ACTIVE_PRIVACY_STATES.has(item.status))} onClick={() => void requestPrivacy(type)}>{busy === `privacy-${type}` ? "Submitting…" : `${type} request`}</button>)}
+          {authenticated && <button type="button" disabled={busy !== null} onClick={() => void refresh()}>Refresh status</button>}
           {!authenticated && <p className="control-explanation">{disabledReason}</p>}
-          {privacyReceipts.map(receipt => <div className="privacy-receipt" key={receipt.id}><CheckCircle2 size={14}/><span><strong>{receipt.type} · {receipt.status}</strong><small>Reference {receipt.id}</small></span></div>)}
+          {privacyReceipts.map(receipt => <div className="privacy-receipt" key={receipt.id}><CheckCircle2 size={14}/><span><strong>{receipt.type} · {receipt.status.replaceAll("_", " ")}</strong><small>Reference {receipt.id}{receipt.dueAt ? ` · Review due ${new Date(receipt.dueAt * 1000).toLocaleDateString()}` : ""}</small>{receipt.downloadAvailable && <a href={`/api/compliance/privacy?download=${encodeURIComponent(receipt.id)}`}>Download verified JSON export</a>}</span></div>)}
         </div>
         {status && <output className="compliance-status" aria-live="polite">{status}</output>}
       </motion.section>

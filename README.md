@@ -68,6 +68,17 @@ Responsible-play limits are deterministic application controls, not model judgme
 
 FATE is a test-token devnet demonstration, not a licensed real-money service. Wallet-authenticated age and jurisdiction attestations, versioned consent, play limits, cooling-off, self-exclusion, privacy requests, and immutable compliance decisions are enforced before transaction preparation. Mainnet is blocked in server policy. Configure ISO alpha-2 allow/block lists with `COMPLIANCE_ALLOWED_COUNTRIES` and `COMPLIANCE_BLOCKED_COUNTRIES`; a network/declaration mismatch requires review. Production KYC, sanctions screening, licensing and jurisdiction-specific legal approval remain mandatory before any real-value launch.
 
+Privacy requests have a durable `received` → `in_review` → `approved` →
+`processing` lifecycle. The protected `/api/internal/privacy` endpoint lists the
+review queue and accepts `review`, `approve`, or `reject` decisions using the
+same server-only automation credential as scheduled maintenance. Approval
+immediately attempts processing and maintenance safely retries unfinished jobs.
+Access and export requests produce a checksum-addressed, wallet-owner-only JSON
+download that expires after seven days. Erasure removes eligible off-chain
+records and reports immutable Solana data, minimized audit evidence, and active
+responsible-play restrictions that were retained. Every decision and outcome is
+written to the compliance audit log; overdue requests create operational alerts.
+
 Run `npm run db:generate` after schema changes. Apply generated migrations through the hosting environment before enabling indexer writes.
 
 ## Deployment gates

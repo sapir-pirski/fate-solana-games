@@ -176,14 +176,37 @@ export async function ensureAuthSchema() {
 let complianceSchemaReady: Promise<unknown> | null = null;
 export async function ensureComplianceSchema() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
-  if (!complianceSchemaReady) complianceSchemaReady = env.DB.batch([
+  if (!complianceSchemaReady) complianceSchemaReady = (async () => {
+    const privacyColumns = await env.DB.prepare("PRAGMA table_info(privacy_requests)").all<{ name: string }>();
+    const privacyNames = new Set(privacyColumns.results.map(column => column.name));
+    if (privacyNames.size) {
+      if (!privacyNames.has("due_at")) {
+        await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN due_at INTEGER NOT NULL DEFAULT 0").run();
+        await env.DB.prepare("UPDATE privacy_requests SET due_at=unixepoch(requested_at)+2592000 WHERE due_at=0").run();
+      }
+      if (!privacyNames.has("reviewed_at")) await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN reviewed_at TEXT").run();
+      if (!privacyNames.has("reviewer_id")) await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN reviewer_id TEXT").run();
+      if (!privacyNames.has("decision_reason")) await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN decision_reason TEXT").run();
+      if (!privacyNames.has("request_details_json")) await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN request_details_json TEXT NOT NULL DEFAULT '{}'").run();
+      if (!privacyNames.has("result_summary_json")) await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN result_summary_json TEXT NOT NULL DEFAULT '{}'").run();
+      if (!privacyNames.has("updated_at")) {
+        await env.DB.prepare("ALTER TABLE privacy_requests ADD COLUMN updated_at TEXT").run();
+        await env.DB.prepare("UPDATE privacy_requests SET updated_at=COALESCE(completed_at,requested_at,CURRENT_TIMESTAMP) WHERE updated_at IS NULL").run();
+      }
+    }
+    return env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS compliance_profiles (wallet_address TEXT PRIMARY KEY, country_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', jurisdiction_status TEXT NOT NULL DEFAULT 'unreviewed', sanctions_status TEXT NOT NULL DEFAULT 'not_screened', age_attested_at INTEGER, terms_version TEXT, privacy_version TEXT, risk_version TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS compliance_profiles_status_idx ON compliance_profiles (status, jurisdiction_status)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS compliance_audit_events (id TEXT PRIMARY KEY, wallet_hash TEXT NOT NULL, event_type TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT, evidence_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS compliance_audit_wallet_created_idx ON compliance_audit_events (wallet_hash, created_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS privacy_requests (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, request_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS privacy_requests (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, request_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, due_at INTEGER NOT NULL, reviewed_at TEXT, completed_at TEXT, reviewer_id TEXT, decision_reason TEXT, request_details_json TEXT NOT NULL DEFAULT '{}', result_summary_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS privacy_requests_wallet_created_idx ON privacy_requests (wallet_address, requested_at)"),
-  ]).catch((error: unknown) => { complianceSchemaReady = null; throw error; });
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS privacy_requests_status_due_idx ON privacy_requests (status, due_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS privacy_request_artifacts (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, wallet_address TEXT NOT NULL, payload_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, expires_at INTEGER NOT NULL, downloaded_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS privacy_request_artifacts_request_uidx ON privacy_request_artifacts (request_id)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS privacy_request_artifacts_wallet_expiry_idx ON privacy_request_artifacts (wallet_address,expires_at)"),
+    ]);
+  })().catch((error: unknown) => { complianceSchemaReady = null; throw error; });
   await complianceSchemaReady;
 }
 

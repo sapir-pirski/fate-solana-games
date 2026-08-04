@@ -7,7 +7,7 @@ import { AI_TOOLS, executeAiTool } from "../../../../lib/ai/tools";
 import { AI_ANONYMOUS_COOKIE, aiAnonymousCookie, authenticatedWallet, parseCookie, randomToken, requireSameOrigin, sha256 } from "@/server/services/auth";
 import { enforceRateLimit, rateLimitResponse } from "@/server/services/coordination";
 import { increment, jsonLog, observe, withSpan } from "../../../../lib/telemetry";
-import { addAiUsage, EMPTY_AI_USAGE, estimateAiCostUsd, normalizeAiUsage, type AiUsageTotals, type ProviderUsage } from "../../../../lib/ai/usage";
+import { addAiUsage, estimateAiCostUsd, normalizeAiUsage, type AiUsageTotals, type ProviderUsage } from "../../../../lib/ai/usage";
 
 const MAX_MESSAGE = 2_000;
 const MAX_TOOL_ROUNDS = 3;

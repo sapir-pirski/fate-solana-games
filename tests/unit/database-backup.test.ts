@@ -27,7 +27,7 @@ function fixture() {
 }
 
 test("backup manifest covers every current application table", () => {
-  for (const table of ["chain_events", "games", "game_entries", "indexer_checkpoints", "wallet_auth_challenges", "rate_limit_buckets", "agent_runs", "agent_alerts"]) {
+  for (const table of ["chain_events", "games", "game_entries", "indexer_checkpoints", "wallet_auth_challenges", "rate_limit_buckets", "agent_runs", "agent_alerts", "privacy_request_artifacts"]) {
     assert.ok(BACKUP_TABLES.includes(table as never), `${table} must be backed up`);
   }
 });

@@ -27,6 +27,7 @@ export const BACKUP_TABLES = [
   "compliance_profiles",
   "compliance_audit_events",
   "privacy_requests",
+  "privacy_request_artifacts",
 ] as const;
 
 export type BackupTable = typeof BACKUP_TABLES[number];
