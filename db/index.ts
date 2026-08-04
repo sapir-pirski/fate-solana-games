@@ -112,18 +112,28 @@ export async function ensureAiSchema() {
 let authSchemaReady: Promise<unknown> | null = null;
 export async function ensureAuthSchema() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
-  if (!authSchemaReady) authSchemaReady = env.DB.batch([
+  if (!authSchemaReady) authSchemaReady = (async () => {
+    const columns = await env.DB.prepare("PRAGMA table_info(transaction_operations)").all<{ name: string }>();
+    const names = new Set(columns.results.map(column => column.name));
+    if (names.size) {
+      if (!names.has("amount_lamports")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN amount_lamports INTEGER NOT NULL DEFAULT 0").run();
+      if (!names.has("game_address")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN game_address TEXT NOT NULL DEFAULT ''").run();
+      if (!names.has("program_id")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN program_id TEXT NOT NULL DEFAULT ''").run();
+      if (!names.has("message_hash")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN message_hash TEXT NOT NULL DEFAULT ''").run();
+    }
+    return env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_auth_challenges (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, nonce_hash TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_auth_challenges_wallet_idx ON wallet_auth_challenges (wallet_address, expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_sessions (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL, revoked_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_sessions_wallet_idx ON wallet_sessions (wallet_address, expires_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, amount_lamports INTEGER NOT NULL DEFAULT 0, game_address TEXT NOT NULL DEFAULT '', program_id TEXT NOT NULL DEFAULT '', message_hash TEXT NOT NULL DEFAULT '', signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS transaction_operations_wallet_status_idx ON transaction_operations (wallet_address, status)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS rate_limit_buckets (key TEXT PRIMARY KEY, scope TEXT NOT NULL, subject_hash TEXT NOT NULL, window_start INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, expires_at INTEGER NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets (expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS background_jobs (id TEXT PRIMARY KEY, queue TEXT NOT NULL, dedupe_key TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8, available_at INTEGER NOT NULL, lease_owner TEXT, lease_expires_at INTEGER, last_error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(queue,dedupe_key))"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS background_jobs_claim_idx ON background_jobs (queue,status,available_at)"),
-  ]).catch((error: unknown) => { authSchemaReady = null; throw error; });
+    ]);
+  })().catch((error: unknown) => { authSchemaReady = null; throw error; });
   await authSchemaReady;
 }
 

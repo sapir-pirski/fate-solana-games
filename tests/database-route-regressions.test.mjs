@@ -11,10 +11,14 @@ test("runtime routes do not query tables removed by the current migration", () =
   }
 });
 
-test("wallet operations serialize lamports before JSON encoding", () => {
-  const source = read("app/solana/useWallet.ts");
-  assert.match(source, /serializeLamports\(operation\.amountLamports\)/);
-  assert.doesNotMatch(source, /JSON\.stringify\(operation\)/);
+test("the server derives compliance amounts from the exact unsigned Solana message", () => {
+  const wallet = read("app/solana/useWallet.ts");
+  const route = read("app/api/transactions/route.ts");
+  assert.match(wallet, /unsignedTransaction/);
+  assert.doesNotMatch(wallet, /amountLamports:serializeLamports/);
+  assert.match(route, /decodeTransactionIntent/);
+  assert.match(route, /intent\.amountLamports/);
+  assert.match(route, /messageHash/);
 });
 
 test("the finalized Solana index has a writer and an authenticated scheduler route", () => {

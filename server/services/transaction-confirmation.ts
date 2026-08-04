@@ -1,4 +1,5 @@
 import { increment, jsonLog, observe, withSpan } from "@/lib/telemetry";
+import { decodeTransactionIntent } from "@/lib/solana/transaction-intent";
 
 type ConfirmationPayload = {
   operationId: string;
@@ -21,11 +22,22 @@ type TransactionOperation = {
   wallet_address: string;
   last_valid_block_height: number | null;
   expires_at: number;
+  game_type: string;
+  action: string;
+  amount_lamports: number;
+  game_address: string;
+  program_id: string;
+  message_hash: string;
 };
 
 type SignatureStatus = {
   err: unknown;
   confirmationStatus?: "processed" | "confirmed" | "finalized" | null;
+};
+
+type FinalizedTransaction = {
+  transaction?: [string, "base64"];
+  meta?: { err?: unknown } | null;
 };
 
 type WorkerSummary = {
@@ -160,6 +172,22 @@ async function updateOperation(db: D1Database, operation: TransactionOperation, 
     .bind(status, errorCode, operation.id, ...allowed).run();
 }
 
+async function verifyFinalizedIntent(operation: TransactionOperation, payload: ConfirmationPayload, rpc: <T>(method: string, params: unknown[]) => Promise<T>) {
+  if (!operation.program_id || !operation.message_hash || !operation.game_address) throw new Error("MISSING_APPROVED_INTENT");
+  const finalized = await rpc<FinalizedTransaction | null>("getTransaction", [payload.signature, { commitment: "finalized", encoding: "base64", maxSupportedTransactionVersion: 0 }]);
+  const encoded = finalized?.transaction;
+  if (!encoded || encoded[1] !== "base64") throw new Error("FINALIZED_TRANSACTION_UNAVAILABLE");
+  if (finalized?.meta?.err) throw new Error("SOLANA_TRANSACTION_FAILED");
+  const decoded = await decodeTransactionIntent({
+    serializedTransactionBase64: encoded[0], walletAddress: payload.walletAddress,
+    programId: operation.program_id, requireUnsigned: false,
+  });
+  const amountMatches = decoded.amountLamports === null || Number(decoded.amountLamports) === operation.amount_lamports;
+  if (decoded.messageHash !== operation.message_hash || decoded.gameType !== operation.game_type || decoded.action !== operation.action || decoded.gameAddress !== operation.game_address || !amountMatches) {
+    throw new Error("TRANSACTION_INTENT_MISMATCH");
+  }
+}
+
 function changed(result: D1Result<unknown>) {
   return Number(result.meta.changes ?? 0) > 0;
 }
@@ -190,7 +218,7 @@ export async function processTransactionConfirmationJobs(options: WorkerOptions)
     }
 
     await withSpan("transaction.confirmation", { component: "confirmation-worker", cluster, attempt: job.attempts }, async () => {
-      const operation = await options.db.prepare("SELECT id,status,signature,wallet_address,last_valid_block_height,expires_at FROM transaction_operations WHERE operation_id=?")
+      const operation = await options.db.prepare("SELECT id,status,signature,wallet_address,last_valid_block_height,expires_at,game_type,action,amount_lamports,game_address,program_id,message_hash FROM transaction_operations WHERE operation_id=?")
         .bind(payload.operationId).first<TransactionOperation>();
       if (!operation || operation.signature !== payload.signature || operation.wallet_address !== payload.walletAddress) {
         if (changed(await deadLetterJob(options.db, job, workerId, "OPERATION_MISMATCH"))) summary.dead += 1;
@@ -218,6 +246,24 @@ export async function processTransactionConfirmationJobs(options: WorkerOptions)
           return;
         }
         if (status?.confirmationStatus === "finalized") {
+          try {
+            await verifyFinalizedIntent(operation, payload, rpc);
+          } catch (error) {
+            const code = error instanceof Error ? error.message : "TRANSACTION_INTENT_MISMATCH";
+            if (code === "FINALIZED_TRANSACTION_UNAVAILABLE") {
+              const retry = await rescheduleJob(options.db, job, workerId, now(), random, code);
+              if (changed(retry.result)) {
+                if (retry.dead) summary.dead += 1;
+                else summary.rescheduled += 1;
+              }
+              increment("fate_confirmation_jobs_total", { outcome: retry.dead ? "dead_finalized_fetch" : "finalized_fetch_retry" });
+              return;
+            }
+            if (changed(await updateOperation(options.db, operation, "failed", code === "SOLANA_TRANSACTION_FAILED" ? code : "TRANSACTION_INTENT_MISMATCH"))) summary.failed += 1;
+            if (changed(await completeJob(options.db, job, workerId))) summary.completed += 1;
+            increment("fate_confirmation_jobs_total", { outcome: "failed_intent_verification" });
+            return;
+          }
           if (changed(await updateOperation(options.db, operation, "finalized"))) summary.finalized += 1;
           if (changed(await completeJob(options.db, job, workerId))) summary.completed += 1;
           increment("fate_confirmation_jobs_total", { outcome: "finalized" });

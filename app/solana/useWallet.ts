@@ -13,7 +13,7 @@ import {
 import { SolanaSignAndSendTransaction, SolanaSignMessage, type SolanaSignAndSendTransactionFeature, type SolanaSignMessageFeature } from "@solana/wallet-standard-features";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { serializeLamports, type GameAction, type GameType } from "@/lib/transactions";
+import type { GameAction, GameType } from "@/lib/transactions";
 import { isAuthenticatedAccount, selectAccountForChain, supportsConfiguredChain } from "@/lib/solana/wallet-chain";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
@@ -86,7 +86,8 @@ export function useSolanaWallet() {
     return () => { window.clearTimeout(initial); offRegister(); offUnregister(); };
   }, [refreshWallets]);
 
-  const updateOperation=useCallback(async(operationId:string,status:TransactionState,extra:Record<string,unknown>={})=>{setOperations(items=>{const current=items.find(item=>item.operationId===operationId);return current?items.map(item=>item.operationId===operationId?{...item,status,...extra}:item):[...items,{operationId,status,...extra}]});try{await fetch("/api/transactions",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,status,...extra})});}catch{/* local recovery remains available */}},[]);
+  const setOperationState=useCallback((operationId:string,status:TransactionState,extra:Record<string,unknown>={})=>{setOperations(items=>{const current=items.find(item=>item.operationId===operationId);return current?items.map(item=>item.operationId===operationId?{...item,status,...extra}:item):[...items,{operationId,status,...extra}]});},[]);
+  const updateOperation=useCallback(async(operationId:string,status:TransactionState,extra:Record<string,unknown>={})=>{setOperationState(operationId,status,extra);try{await fetch("/api/transactions",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,status,...extra})});}catch{/* durable server reconciliation remains available */}},[setOperationState]);
 
   const authenticated=isAuthenticatedAccount(account?.address,authenticatedAddress);
   const authenticate=useCallback(async(selected:CompatibleWallet,nextAccount:WalletAccount)=>{const challengeResponse=await fetch("/api/auth/challenge",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({walletAddress:nextAccount.address})});if(!challengeResponse.ok)throw new Error("Could not create wallet authentication challenge.");const challenge=await challengeResponse.json() as {challengeId:string;message:string};const [signed]=await selected.features[SolanaSignMessage].signMessage({account:nextAccount,message:new TextEncoder().encode(challenge.message)});if(!signed)throw new Error("Wallet did not sign the authentication message.");const verify=await fetch("/api/auth/verify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({challengeId:challenge.challengeId,walletAddress:nextAccount.address,signature:base58(signed.signature)})});if(!verify.ok)throw new Error("Wallet authentication signature was rejected.");const verified=await verify.json() as {authenticated?:boolean;walletAddress?:string};if(verified.authenticated!==true||verified.walletAddress!==nextAccount.address)throw new Error("The authenticated session does not match the selected wallet account.");return verified.walletAddress;},[]);
@@ -137,13 +138,14 @@ export function useSolanaWallet() {
     if (!wallet || !account || !isAuthenticatedAccount(account.address,authenticatedAddress)) throw new Error("Connect and authenticate a compatible Solana wallet first.");
     if (!supportsConfiguredChain(wallet,CHAIN)||!supportsConfiguredChain(account,CHAIN)) throw new Error(`The connected wallet account does not support ${CHAIN}. Reconnect on the configured network before signing.`);
     const sessionResponse=await fetch("/api/auth/session",{cache:"no-store"});const session=sessionResponse.ok?await sessionResponse.json() as {walletAddress?:string}:null;if(session?.walletAddress!==account.address){setAuthenticatedAddress(null);throw new Error("The wallet account no longer matches the authenticated server session. Reconnect before signing.");}
-    const operationPayload={...operation,amountLamports:serializeLamports(operation.amountLamports)};
-    const create=await fetch("/api/transactions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operationPayload)});if(!create.ok){const failure=await create.json().catch(()=>({})) as {code?:string};const messages:Record<string,string>={AGE_ATTESTATION_REQUIRED:"Complete the Safety & privacy eligibility check first.",CONSENT_RENEWAL_REQUIRED:"Review and renew the current policies first.",JURISDICTION_BLOCKED:"This service is unavailable in your declared jurisdiction.",COMPLIANCE_REVIEW_REQUIRED:"Eligibility requires review before playing.",SELF_EXCLUDED:"Self-exclusion is active for this wallet.",COOLDOWN_ACTIVE:"A cooling-off period is active for this wallet.",DAILY_LIMIT_EXCEEDED:"Your daily play limit would be exceeded.",WEEKLY_LIMIT_EXCEEDED:"Your weekly play limit would be exceeded.",MAINNET_DISABLED_PENDING_LICENSE:"Mainnet is disabled pending licensing."};throw new Error(messages[failure.code??""]??"Could not create an idempotent transaction operation.");}
     const rpcUrls=[rpcUrl,...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS??"").split(",")].filter((value,index,all)=>value&&all.indexOf(value)===index);
     const connection = new Connection(rpcUrls[0], "confirmed");
     const latest = await connection.getLatestBlockhash("confirmed");
     transaction.feePayer = new PublicKey(account.address);
     transaction.recentBlockhash = latest.blockhash;
+    const unsignedTransaction=bytesToBase64(transaction.serialize({requireAllSignatures:false,verifySignatures:false}));
+    const operationPayload={operationId:operation.operationId,gameType:operation.gameType,action:operation.action,unsignedTransaction,lastValidBlockHeight:latest.lastValidBlockHeight};
+    const create=await fetch("/api/transactions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operationPayload)});if(!create.ok){const failure=await create.json().catch(()=>({})) as {code?:string};const messages:Record<string,string>={AGE_ATTESTATION_REQUIRED:"Complete the Safety & privacy eligibility check first.",CONSENT_RENEWAL_REQUIRED:"Review and renew the current policies first.",JURISDICTION_BLOCKED:"This service is unavailable in your declared jurisdiction.",COMPLIANCE_REVIEW_REQUIRED:"Eligibility requires review before playing.",SELF_EXCLUDED:"Self-exclusion is active for this wallet.",COOLDOWN_ACTIVE:"A cooling-off period is active for this wallet.",DAILY_LIMIT_EXCEEDED:"Your daily play limit would be exceeded.",WEEKLY_LIMIT_EXCEEDED:"Your weekly play limit would be exceeded.",MAINNET_DISABLED_PENDING_LICENSE:"Mainnet is disabled pending licensing.",TRANSACTION_METADATA_MISMATCH:"The prepared transaction does not match the selected game action.",INVALID_TRANSACTION_PROGRAM:"The prepared transaction targets an unapproved program.",INVALID_TRANSACTION_ACCOUNTS:"The prepared transaction contains unexpected Solana accounts.",WAGER_VERIFICATION_UNAVAILABLE:"The wager could not be verified on-chain. Try again shortly."};throw new Error(messages[failure.code??""]??"The server rejected the prepared transaction intent.");}
     onStatus?.("awaiting_approval"); await updateOperation(operation.operationId,"awaiting_signature",{lastValidBlockHeight:latest.lastValidBlockHeight});
     let output; try {[output] = await wallet.features[SolanaSignAndSendTransaction].signAndSendTransaction({
       account, chain: CHAIN as `${string}:${string}`, transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
@@ -155,16 +157,19 @@ export function useSolanaWallet() {
     while (Date.now() < deadline) {
       let status=null;for(const endpoint of rpcUrls){try{status=(await new Connection(endpoint,"confirmed").getSignatureStatuses([signature],{searchTransactionHistory:true})).value[0];if(status)break;}catch{await new Promise(resolve=>setTimeout(resolve,250+Math.random()*500));}}
       if (status?.err) {await updateOperation(operation.operationId,"failed",{signature,errorCode:"CHAIN_ERROR",errorMessage:JSON.stringify(status.err)});throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);}
-      if(status?.confirmationStatus==="confirmed"){onStatus?.("confirmed");await updateOperation(operation.operationId,"confirmed",{signature});}
-      if (status?.confirmationStatus === "finalized") { onStatus?.("finalized");await updateOperation(operation.operationId,"finalized",{signature}); await refreshBalance(account); return signature; }
+      if(status?.confirmationStatus==="confirmed"){onStatus?.("confirmed");setOperationState(operation.operationId,"confirmed",{signature});}
+      if (status?.confirmationStatus === "finalized") {
+        const verified=await fetch("/api/transactions",{cache:"no-store"});
+        if(verified.ok){const payload=await verified.json() as {operations:Array<{operationId:string;status:TransactionState;errorCode?:string|null}>};const serverOperation=payload.operations.find(item=>item.operationId===operation.operationId);if(serverOperation?.status==="failed")throw new Error(`The finalized transaction failed server intent verification (${serverOperation.errorCode??"INTENT_MISMATCH"}).`);if(serverOperation?.status==="finalized"){setOperations(payload.operations);onStatus?.("finalized");await refreshBalance(account);return signature;}}
+      }
       await new Promise(resolve => setTimeout(resolve, 1_500));
     }
     await updateOperation(operation.operationId,"unknown",{signature,errorCode:"CONFIRMATION_TIMEOUT"});throw new Error(`Transaction ${signature} was submitted; confirmation tracking will resume automatically.`);
-  }, [account, authenticatedAddress, refreshBalance, rpcUrl, updateOperation, wallet]);
+  }, [account, authenticatedAddress, refreshBalance, rpcUrl, setOperationState, updateOperation, wallet]);
 
   useEffect(()=>{let cancelled=false;(async()=>{try{const response=await fetch("/api/auth/session",{cache:"no-store"});if(!response.ok)return;const session=await response.json() as {walletAddress:string};const name=localStorage.getItem("fate_wallet_name");const selected=getWallets().get().filter(isCompatible).find(candidate=>candidate.name===name);if(!selected)return;const output=await selected.features[StandardConnect].connect({silent:true});const restored=selectAccountForChain(output.accounts,CHAIN,session.walletAddress);if(!restored)return;if(!cancelled){setWallet(selected);setAccount(restored);setAuthenticatedAddress(session.walletAddress);await refreshBalance(restored);}}catch{/* explicit connect remains available */}finally{if(!cancelled)setRecovering(false);}})();return()=>{cancelled=true};},[refreshBalance]);
 
-  useEffect(()=>{if(!authenticated)return;let stopped=false;const reconcile=async()=>{try{const response=await fetch("/api/transactions",{cache:"no-store"});if(!response.ok)return;const payload=await response.json() as {operations:Array<{operationId:string;status:TransactionState;signature?:string|null}>};if(stopped)return;setOperations(payload.operations);for(const item of payload.operations){if(!item.signature||!["submitted","confirmed","unknown"].includes(item.status))continue;for(const endpoint of [rpcUrl,...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS??"").split(",")].filter(Boolean)){try{const status=(await new Connection(endpoint,"confirmed").getSignatureStatuses([item.signature],{searchTransactionHistory:true})).value[0];if(status?.err){await updateOperation(item.operationId,"failed",{signature:item.signature,errorCode:"CHAIN_ERROR"});break;}if(status?.confirmationStatus==="finalized"){await updateOperation(item.operationId,"finalized",{signature:item.signature});break;}if(status?.confirmationStatus==="confirmed"){await updateOperation(item.operationId,"confirmed",{signature:item.signature});break;}}catch{/* try next RPC */}}}}catch{/* retry on interval */}};void reconcile();const timer=setInterval(()=>void reconcile(),5000);return()=>{stopped=true;clearInterval(timer)};},[authenticated,rpcUrl,updateOperation]);
+  useEffect(()=>{if(!authenticated)return;let stopped=false;const reconcile=async()=>{try{const response=await fetch("/api/transactions",{cache:"no-store"});if(!response.ok)return;const payload=await response.json() as {operations:Array<{operationId:string;status:TransactionState;signature?:string|null}>};if(!stopped)setOperations(payload.operations);}catch{/* retry on interval */}};void reconcile();const timer=setInterval(()=>void reconcile(),5000);return()=>{stopped=true;clearInterval(timer)};},[authenticated]);
   useEffect(()=>{const timer=setTimeout(()=>{try{const saved=JSON.parse(localStorage.getItem("fate_transaction_operations")??"[]");if(Array.isArray(saved))setOperations(saved.slice(0,100));}catch{/* corrupted recovery data is discarded */}},0);return()=>clearTimeout(timer);},[]);
   useEffect(()=>{localStorage.setItem("fate_transaction_operations",JSON.stringify(operations.slice(0,100)));},[operations]);
 
@@ -219,4 +224,10 @@ function base58(bytes: Uint8Array) {
   for (const byte of bytes) { let carry = byte; for (let i = 0; i < digits.length; i++) { const value = digits[i] * 256 + carry; digits[i] = value % 58; carry = Math.floor(value / 58); } while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); } }
   let output = ""; for (const byte of bytes) { if (byte !== 0) break; output += "1"; }
   return output + digits.reverse().map(value => alphabet[value]).join("");
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return btoa(binary);
 }

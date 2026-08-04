@@ -143,6 +143,8 @@ export const walletSessions = sqliteTable("wallet_sessions", {
 export const transactionOperations = sqliteTable("transaction_operations", {
   id: text("id").primaryKey(), operationId: text("operation_id").notNull(), walletAddress: text("wallet_address").notNull(),
   gameType: text("game_type").notNull(), action: text("action").notNull(), status: text("status").notNull(),
+  amountLamports: integer("amount_lamports").notNull().default(0), gameAddress: text("game_address").notNull().default(""),
+  programId: text("program_id").notNull().default(""), messageHash: text("message_hash").notNull().default(""),
   signature: text("signature"), errorCode: text("error_code"), errorMessage: text("error_message"), attempts: integer("attempts").notNull().default(0),
   lastValidBlockHeight: integer("last_valid_block_height"), expiresAt: integer("expires_at").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
