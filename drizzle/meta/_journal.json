@@ -64,6 +64,13 @@
       "when": 1785832945820,
       "tag": "0008_faulty_firebird",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785834429840,
+      "tag": "0009_tired_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

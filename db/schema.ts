@@ -107,29 +107,6 @@ export const gameEntries = sqliteTable(
   ],
 );
 
-export const transactionIntents = sqliteTable(
-  "transaction_intents",
-  {
-    id: text("id").primaryKey(),
-    walletAddress: text("wallet_address").notNull(),
-    gameType: text("game_type").notNull(),
-    gameAddress: text("game_address"),
-    action: text("action").notNull(),
-    amountLamports: integer("amount_lamports"),
-    status: text("status").notNull(),
-    signature: text("signature"),
-    errorCode: text("error_code"),
-    expiresAt: integer("expires_at").notNull(),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    uniqueIndex("transaction_intents_signature_uidx").on(table.signature),
-    index("transaction_intents_wallet_status_idx").on(table.walletAddress, table.status),
-    index("transaction_intents_expiry_idx").on(table.expiresAt),
-  ],
-);
-
 export const walletAuthChallenges = sqliteTable("wallet_auth_challenges", {
   id: text("id").primaryKey(), walletAddress: text("wallet_address").notNull(), nonceHash: text("nonce_hash").notNull(),
   message: text("message").notNull(), expiresAt: integer("expires_at").notNull(), usedAt: integer("used_at"),

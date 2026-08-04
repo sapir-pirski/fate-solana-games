@@ -30,3 +30,13 @@ test("operations automation remains non-signing", async () => {
   const ops = await read("app/api/ai/ops/route.ts");
   assert.match(ops, /automaticSigning: false/);
 });
+
+test("transaction diagnostics read only the authenticated wallet's tracked operation", async () => {
+  const tools = await read("lib/ai/tools.ts");
+  assert.match(tools, /transactionOperations/);
+  assert.doesNotMatch(tools, /transactionIntents|trackedIntent/);
+  assert.match(tools, /WALLET_AUTH_REQUIRED/);
+  assert.match(tools, /eq\(transactionOperations\.signature, signature\)/);
+  assert.match(tools, /eq\(transactionOperations\.walletAddress, context\.authenticatedWallet\)/);
+  assert.match(tools, /trackedOperation/);
+});

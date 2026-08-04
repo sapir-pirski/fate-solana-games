@@ -1,6 +1,6 @@
-import { desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { getDb } from "../../db";
-import { gameEntries, games, responsiblePlayLimits, transactionIntents } from "../../db/schema";
+import { gameEntries, games, responsiblePlayLimits, transactionOperations } from "../../db/schema";
 import { BASE58, GAME_TYPES } from "./policy";
 import { complianceDecision } from "../compliance";
 
@@ -8,7 +8,7 @@ export const AI_TOOLS = [
   { type: "function", name: "explain_game", description: "Explain deterministic FATE game rules and failure recovery.", strict: true, parameters: { type: "object", properties: { gameType: { type: "string", enum: ["jackpot", "coinflip", "daily"] } }, required: ["gameType"], additionalProperties: false } },
   { type: "function", name: "get_wallet_activity", description: "Read indexed on-chain activity for a wallet. Never estimates missing records.", strict: true, parameters: { type: "object", properties: { walletAddress: { type: "string" } }, required: ["walletAddress"], additionalProperties: false } },
   { type: "function", name: "verify_fairness", description: "Return stored settlement and randomness evidence for a game address.", strict: true, parameters: { type: "object", properties: { gameAddress: { type: "string" } }, required: ["gameAddress"], additionalProperties: false } },
-  { type: "function", name: "diagnose_transaction", description: "Check a tracked transaction intent and optionally its Solana RPC status.", strict: true, parameters: { type: "object", properties: { signature: { type: "string" } }, required: ["signature"], additionalProperties: false } },
+  { type: "function", name: "diagnose_transaction", description: "Check one of the authenticated wallet's tracked transaction operations and its Solana RPC status.", strict: true, parameters: { type: "object", properties: { signature: { type: "string" } }, required: ["signature"], additionalProperties: false } },
   { type: "function", name: "check_responsible_limits", description: "Read deterministic responsible-play limits for a wallet.", strict: true, parameters: { type: "object", properties: { walletAddress: { type: "string" }, proposedLamports: { type: "integer", minimum: 0 } }, required: ["walletAddress", "proposedLamports"], additionalProperties: false } },
   { type: "function", name: "draft_game_action", description: "Create a non-signing devnet action draft. This never submits or signs a transaction.", strict: true, parameters: { type: "object", properties: { walletAddress: { type: "string" }, action: { type: "string", enum: ["enter_jackpot", "create_coinflip", "join_coinflip", "open_daily"] }, gameType: { type: "string", enum: ["jackpot", "coinflip", "daily"] }, amountLamports: { type: "integer", minimum: 0 }, side: { type: ["string", "null"], enum: ["heads", "tails", null] } }, required: ["walletAddress", "action", "gameType", "amountLamports", "side"], additionalProperties: false } },
 ] as const;
@@ -52,13 +52,32 @@ export async function executeAiTool(name: string, raw: Record<string, unknown>, 
   if (name === "diagnose_transaction") {
     const signature = String(raw.signature);
     if (!BASE58.test(signature)) throw new Error("INVALID_SIGNATURE");
-    const [intent] = await getDb().select().from(transactionIntents).where(eq(transactionIntents.signature, signature)).limit(1);
+    if (!context.authenticatedWallet) throw new Error("WALLET_AUTH_REQUIRED");
+    const [operation] = await getDb().select({
+      operationId: transactionOperations.operationId,
+      gameType: transactionOperations.gameType,
+      gameAddress: transactionOperations.gameAddress,
+      action: transactionOperations.action,
+      status: transactionOperations.status,
+      amountLamports: transactionOperations.amountLamports,
+      signature: transactionOperations.signature,
+      errorCode: transactionOperations.errorCode,
+      errorMessage: transactionOperations.errorMessage,
+      attempts: transactionOperations.attempts,
+      lastValidBlockHeight: transactionOperations.lastValidBlockHeight,
+      expiresAt: transactionOperations.expiresAt,
+      createdAt: transactionOperations.createdAt,
+      updatedAt: transactionOperations.updatedAt,
+    }).from(transactionOperations).where(and(
+      eq(transactionOperations.signature, signature),
+      eq(transactionOperations.walletAddress, context.authenticatedWallet),
+    )).limit(1);
     let rpcStatus: unknown = null;
     try {
       const response = await fetch(process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method: "getSignatureStatuses", params: [[signature], { searchTransactionHistory: true }] }) });
       rpcStatus = (await response.json() as { result?: { value?: unknown[] } }).result?.value?.[0] ?? null;
     } catch { rpcStatus = null; }
-    return { signature, trackedIntent: intent ?? null, rpcStatus };
+    return { signature, trackedOperation: operation ?? null, rpcStatus };
   }
   if (name === "check_responsible_limits") {
     const wallet = authorizedWallet(raw, context); const proposed = Number(raw.proposedLamports);

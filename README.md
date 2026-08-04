@@ -52,7 +52,7 @@ The randomness authority is deliberately an adapter boundary, not a claim that s
 
 Product events are queued in IndexedDB, flushed asynchronously in bounded batches, retried with exponential backoff and jitter, deduplicated by UUID, and retained for 90 days. Logs exclude secrets, signatures, raw user agents, and IP-derived fields.
 
-Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_intents` supports pending/confirmed/failed recovery; `indexer_checkpoints` records consumer progress and health.
+Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_operations` is the authoritative wallet transaction lifecycle and pending-spend reservation store; `indexer_checkpoints` records consumer progress and health.
 
 The server-side Solana indexer reads only `finalized` program transactions, decodes Anchor events, and writes the raw event plus its query projections in one D1 batch. Public game reads trigger a bounded live synchronization; `POST /api/internal/indexer` performs authenticated live and historical backfill work for the scheduled operations workflow. Cursor claims prevent overlapping workers, failed runs retain the last durable cursor, and every mutation is idempotent and slot-monotonic so retries and older backfill pages cannot overwrite newer state.
 
