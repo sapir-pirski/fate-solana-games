@@ -27,3 +27,11 @@ test("wallet confirmation recovers through RPC failover without signing again",(
   assert.match(wallet,/\/api\/auth\/session/);
   assert.doesNotMatch(wallet,/signAndSendTransaction[\s\S]{0,300}while \(Date\.now/);
 });
+
+test("wallet discovery and account recovery fail closed on the configured chain",()=>{
+  assert.match(wallet,/supportsConfiguredChain\(wallet, CHAIN\)/);
+  assert.match(wallet,/selectAccountForChain\(output\.accounts, CHAIN\)/);
+  assert.match(wallet,/selectAccountForChain\(output\.accounts,CHAIN,session\.walletAddress\)/);
+  assert.doesNotMatch(wallet,/CHAIN === "solana:devnet"/);
+  assert.doesNotMatch(wallet,/output\.accounts\[0\]/);
+});

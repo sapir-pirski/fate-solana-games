@@ -14,6 +14,7 @@ import { SolanaSignAndSendTransaction, SolanaSignMessage, type SolanaSignAndSend
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { serializeLamports, type GameAction, type GameType } from "@/lib/transactions";
+import { selectAccountForChain, supportsConfiguredChain } from "@/lib/solana/wallet-chain";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CHAIN = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
@@ -30,9 +31,10 @@ type CompatibleWalletFeatures =
 type CompatibleWallet = Wallet & { readonly features: Wallet["features"] & CompatibleWalletFeatures };
 
 function isCompatible(wallet: Wallet): wallet is CompatibleWallet {
-  return CHAIN === "solana:devnet" || wallet.chains.includes(CHAIN as `${string}:${string}`)
-    ? StandardConnect in wallet.features && SolanaSignAndSendTransaction in wallet.features && SolanaSignMessage in wallet.features
-    : false;
+  return supportsConfiguredChain(wallet, CHAIN)
+    && StandardConnect in wallet.features
+    && SolanaSignAndSendTransaction in wallet.features
+    && SolanaSignMessage in wallet.features;
 }
 
 export function useSolanaWallet() {
@@ -99,8 +101,8 @@ export function useSolanaWallet() {
         selected.features[StandardConnect].connect(),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Wallet connection timed out. Unlock the wallet and try again.")), 30_000)),
       ]);
-      const nextAccount = output.accounts.find(item => item.chains.includes(CHAIN as `${string}:${string}`)) ?? output.accounts[0];
-      if (!nextAccount) throw new Error("The wallet did not authorize a Solana account.");
+      const nextAccount = selectAccountForChain(output.accounts, CHAIN);
+      if (!nextAccount) throw new Error(`The wallet did not authorize an account for ${CHAIN}. Switch the wallet to the configured network and try again.`);
       setWallet(selected);
       setAccount(nextAccount);
       await authenticate(selected,nextAccount);
@@ -128,6 +130,7 @@ export function useSolanaWallet() {
 
   const sendTransaction = useCallback(async (transaction: Transaction, operation:OperationInput, onStatus?: (status: "awaiting_approval" | "submitted" | "confirmed" | "finalized") => void) => {
     if (!wallet || !account || !authenticated) throw new Error("Connect and authenticate a compatible Solana wallet first.");
+    if (!supportsConfiguredChain(wallet,CHAIN)||!supportsConfiguredChain(account,CHAIN)) throw new Error(`The connected wallet account does not support ${CHAIN}. Reconnect on the configured network before signing.`);
     const operationPayload={...operation,amountLamports:serializeLamports(operation.amountLamports)};
     const create=await fetch("/api/transactions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operationPayload)});if(!create.ok){const failure=await create.json().catch(()=>({})) as {code?:string};const messages:Record<string,string>={AGE_ATTESTATION_REQUIRED:"Complete the Safety & privacy eligibility check first.",CONSENT_RENEWAL_REQUIRED:"Review and renew the current policies first.",JURISDICTION_BLOCKED:"This service is unavailable in your declared jurisdiction.",COMPLIANCE_REVIEW_REQUIRED:"Eligibility requires review before playing.",SELF_EXCLUDED:"Self-exclusion is active for this wallet.",COOLDOWN_ACTIVE:"A cooling-off period is active for this wallet.",DAILY_LIMIT_EXCEEDED:"Your daily play limit would be exceeded.",WEEKLY_LIMIT_EXCEEDED:"Your weekly play limit would be exceeded.",MAINNET_DISABLED_PENDING_LICENSE:"Mainnet is disabled pending licensing."};throw new Error(messages[failure.code??""]??"Could not create an idempotent transaction operation.");}
     const rpcUrls=[rpcUrl,...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS??"").split(",")].filter((value,index,all)=>value&&all.indexOf(value)===index);
@@ -153,7 +156,7 @@ export function useSolanaWallet() {
     await updateOperation(operation.operationId,"unknown",{signature,errorCode:"CONFIRMATION_TIMEOUT"});throw new Error(`Transaction ${signature} was submitted; confirmation tracking will resume automatically.`);
   }, [account, authenticated, refreshBalance, rpcUrl, updateOperation, wallet]);
 
-  useEffect(()=>{let cancelled=false;(async()=>{try{const response=await fetch("/api/auth/session",{cache:"no-store"});if(!response.ok)return;const session=await response.json() as {walletAddress:string};const name=localStorage.getItem("fate_wallet_name");const selected=getWallets().get().filter(isCompatible).find(candidate=>candidate.name===name);if(!selected)return;const output=await selected.features[StandardConnect].connect({silent:true});const restored=output.accounts.find(item=>item.address===session.walletAddress);if(!restored)return;if(!cancelled){setWallet(selected);setAccount(restored);setAuthenticated(true);await refreshBalance(restored);}}catch{/* explicit connect remains available */}finally{if(!cancelled)setRecovering(false);}})();return()=>{cancelled=true};},[refreshBalance]);
+  useEffect(()=>{let cancelled=false;(async()=>{try{const response=await fetch("/api/auth/session",{cache:"no-store"});if(!response.ok)return;const session=await response.json() as {walletAddress:string};const name=localStorage.getItem("fate_wallet_name");const selected=getWallets().get().filter(isCompatible).find(candidate=>candidate.name===name);if(!selected)return;const output=await selected.features[StandardConnect].connect({silent:true});const restored=selectAccountForChain(output.accounts,CHAIN,session.walletAddress);if(!restored)return;if(!cancelled){setWallet(selected);setAccount(restored);setAuthenticated(true);await refreshBalance(restored);}}catch{/* explicit connect remains available */}finally{if(!cancelled)setRecovering(false);}})();return()=>{cancelled=true};},[refreshBalance]);
 
   useEffect(()=>{if(!authenticated)return;let stopped=false;const reconcile=async()=>{try{const response=await fetch("/api/transactions",{cache:"no-store"});if(!response.ok)return;const payload=await response.json() as {operations:Array<{operationId:string;status:TransactionState;signature?:string|null}>};if(stopped)return;setOperations(payload.operations);for(const item of payload.operations){if(!item.signature||!["submitted","confirmed","unknown"].includes(item.status))continue;for(const endpoint of [rpcUrl,...(process.env.NEXT_PUBLIC_SOLANA_RPC_URLS??"").split(",")].filter(Boolean)){try{const status=(await new Connection(endpoint,"confirmed").getSignatureStatuses([item.signature],{searchTransactionHistory:true})).value[0];if(status?.err){await updateOperation(item.operationId,"failed",{signature:item.signature,errorCode:"CHAIN_ERROR"});break;}if(status?.confirmationStatus==="finalized"){await updateOperation(item.operationId,"finalized",{signature:item.signature});break;}if(status?.confirmationStatus==="confirmed"){await updateOperation(item.operationId,"confirmed",{signature:item.signature});break;}}catch{/* try next RPC */}}}}catch{/* retry on interval */}};void reconcile();const timer=setInterval(()=>void reconcile(),5000);return()=>{stopped=true;clearInterval(timer)};},[authenticated,rpcUrl,updateOperation]);
   useEffect(()=>{const timer=setTimeout(()=>{try{const saved=JSON.parse(localStorage.getItem("fate_transaction_operations")??"[]");if(Array.isArray(saved))setOperations(saved.slice(0,100));}catch{/* corrupted recovery data is discarded */}},0);return()=>clearTimeout(timer);},[]);
@@ -164,11 +167,19 @@ export function useSolanaWallet() {
     if (!eventsFeature) return;
     return eventsFeature.on("change", ({ accounts }) => {
       if (!accounts) return;
-      const next = accounts.find(item => item.chains.includes(CHAIN as `${string}:${string}`)) ?? null;
+      const next = selectAccountForChain(accounts, CHAIN, account?.address);
+      if (!next) {
+        setAccount(null);
+        setBalance(null);
+        setAuthenticated(false);
+        setError(`The authorized wallet account is no longer available on ${CHAIN}. Reconnect to continue.`);
+        void fetch("/api/auth/session",{method:"DELETE"}).catch(()=>undefined);
+        return;
+      }
       setAccount(next);
       void refreshBalance(next);
     });
-  }, [refreshBalance, wallet]);
+  }, [account?.address, refreshBalance, wallet]);
 
   useEffect(() => {
     const interval = account ? window.setInterval(() => void refreshBalance(), 15_000) : undefined;
