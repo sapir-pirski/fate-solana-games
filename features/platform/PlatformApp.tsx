@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
+import { Connection, PublicKey } from "@solana/web3.js";
 import {
   ArrowUpRight,
   Check,
@@ -36,7 +37,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useS
 import { logEvent, startLogging } from "@/app/logging-client";
 import { useSolanaWallet } from "@/app/solana/useWallet";
 import { useGames } from "@/app/solana/useGames";
-import { cancelCoinflipTransaction, cancelDailyTimeoutTransaction, COINFLIP_RANDOMNESS_TIMEOUT_SECONDS, createCoinflipTransaction, DAILY_COOLDOWN_SECONDS, DAILY_RANDOMNESS_TIMEOUT_SECONDS, enterJackpotTransaction, fetchCoinflipGameAccount, fetchCoinflipSettlementContext, fetchDailyPlayerAccount, joinCoinflipTransaction, openDailyCaseTransaction, refundCoinflipTimeoutTransaction, settleCoinflipTransaction, settleDailyCaseTransaction, solToLamports, type DailyPlayerAccount } from "@/lib/solana/fate-client";
+import { cancelCoinflipTransaction, cancelDailyTimeoutTransaction, COINFLIP_RANDOMNESS_TIMEOUT_SECONDS, createCoinflipTransaction, DAILY_COOLDOWN_SECONDS, DAILY_RANDOMNESS_TIMEOUT_SECONDS, enterJackpotTransaction, fetchCoinflipGameAccount, fetchCoinflipSettlementContext, fetchDailyPlayerAccount, fetchFateWagerConfig, joinCoinflipTransaction, openDailyCaseTransaction, refundCoinflipTimeoutTransaction, settleCoinflipTransaction, settleDailyCaseTransaction, solToLamports, usableJackpotLamports, type DailyPlayerAccount } from "@/lib/solana/fate-client";
 import { getPublicConfig, requireFateProgramId } from "@/lib/config/client";
 import { AnimatedNumber, Mark, SolIcon, Stat } from "@/components/ui/GamePrimitives";
 import { jackpotChance } from "@/features/jackpot/model";
@@ -69,6 +70,7 @@ function useHydrated() {
 
 const short = (address: string | null) => address ? `${address.slice(0,4)}...${address.slice(-4)}` : "—";
 const sol = (lamports: string) => Number(lamports) / 1_000_000_000;
+const formatLamportsInput = (lamports: bigint) => { const whole=lamports/1_000_000_000n,fraction=(lamports%1_000_000_000n).toString().padStart(9,"0").replace(/0+$/,"");return fraction?`${whole}.${fraction}`:whole.toString(); };
 
 
 function ParticleField() {
@@ -133,25 +135,35 @@ function Fairness({ hash }: { hash?: string | null }) {
 
 function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnect: () => void; notify: (t: Toast) => void }) {
   const connected = wallet.connected;
-  const { games, loading, error, refresh } = useGames("jackpot", "open");
+  const config=getPublicConfig();
+  const { games, loading, error, refresh, clockOffsetSeconds } = useGames("jackpot", "open");
   const { games: settledRounds, loading: settledLoading, error: settledError } = useGames("jackpot", "settled");
   const round = games[0];
   const previousRound = settledRounds[0];
   const [amount, setAmount] = useState("0.50");
   const [submitting, setSubmitting] = useState(false);
-  const [seconds, setSeconds] = useState(18);
-  useEffect(() => { const timer = setInterval(() => setSeconds(s => s > 0 ? s - 1 : 30), 1000); return () => clearInterval(timer); }, []);
+  const [maxLoading,setMaxLoading]=useState(false);
+  const [tick,setTick]=useState(()=>Math.floor(Date.now()/1000));
+  const expiredRoundRef=useRef<string|null>(null);
+  useEffect(() => { const timer = setInterval(() => setTick(Math.floor(Date.now()/1000)), 1_000); return () => clearInterval(timer); }, []);
+  const chainNow=tick+clockOffsetSeconds;
+  const seconds=round?.expires_at?Math.max(0,round.expires_at-chainNow):0;
+  useEffect(()=>{if(!round||seconds>0){expiredRoundRef.current=null;return;}if(expiredRoundRef.current===round.address)return;expiredRoundRef.current=round.address;void refresh();},[refresh,round,seconds]);
   const pot = round ? sol(round.pot_lamports) : 0;
   const chance = connected && round ? jackpotChance(Number(amount), pot) : 0;
+  const maximumEntry=useCallback(async()=>{if(!wallet.address||wallet.balance===null||!round||!config.fateProgramId)throw new Error("Connect a funded wallet while an on-chain round is open.");const connection=new Connection(config.solanaRpcUrl,"confirmed"),probe=enterJackpotTransaction({programId:config.fateProgramId,player:wallet.address,roundId:BigInt(round.numeric_id),amountLamports:1n});const latest=await connection.getLatestBlockhash("confirmed");probe.feePayer=new PublicKey(wallet.address);probe.recentBlockhash=latest.blockhash;const estimatedFee=BigInt((await connection.getFeeForMessage(probe.compileMessage(),"confirmed")).value??5_000),wagerConfig=await fetchFateWagerConfig({rpcUrl:config.solanaRpcUrl,programId:config.fateProgramId});let dailyRemaining:bigint|null=null,weeklyRemaining:bigint|null=null;const limitsResponse=await fetch("/api/compliance/responsible-play",{cache:"no-store"}).catch(()=>null);if(limitsResponse?.ok){const limits=await limitsResponse.json() as {dailyRemaining:number|null;weeklyRemaining:number|null};if(Number.isSafeInteger(limits.dailyRemaining)&&limits.dailyRemaining!==null)dailyRemaining=BigInt(limits.dailyRemaining);if(Number.isSafeInteger(limits.weeklyRemaining)&&limits.weeklyRemaining!==null)weeklyRemaining=BigInt(limits.weeklyRemaining);}const maximum=usableJackpotLamports({walletLamports:BigInt(Math.floor(wallet.balance*1_000_000_000)),estimatedFeeLamports:estimatedFee,safetyReserveLamports:1_000_000n,programMaxLamports:wagerConfig.maxWagerLamports,dailyRemainingLamports:dailyRemaining,weeklyRemainingLamports:weeklyRemaining});if(maximum<wagerConfig.minWagerLamports)throw new Error("Your spendable balance or remaining play limit is below the minimum wager.");return maximum;},[config.fateProgramId,config.solanaRpcUrl,round,wallet.address,wallet.balance]);
+  const selectMaximum=async()=>{if(!connected)return onConnect();try{setMaxLoading(true);setAmount(formatLamportsInput(await maximumEntry()));}catch(cause){notify({title:"MAX unavailable",text:cause instanceof Error?cause.message:"The spendable balance could not be calculated."});}finally{setMaxLoading(false)}};
   const enter = async () => {
     if (!connected) return onConnect();
     if (!round) return notify({ title: "No open round", text: "Wait for a finalized jackpot round to appear in the indexer." });
+    if(seconds<=0){void refresh();return notify({title:"Round expired",text:"This on-chain round is closed to new entries. Waiting for the next indexed round."});}
     if (!PROGRAM_CONFIGURED) return notify({ title: "Devnet setup required", text: "The audited program address has not been configured, so no funds were requested." });
     try {
       setSubmitting(true);
-      const transaction = enterJackpotTransaction({programId:requireFateProgramId(),player:wallet.address!,roundId:BigInt(round.numeric_id),amountLamports:solToLamports(amount)});
+      const amountLamports=solToLamports(amount),spendable=await maximumEntry();if(amountLamports>spendable)throw new Error(`Entry exceeds the current spendable maximum of ${formatLamportsInput(spendable)} SOL.`);
+      const transaction = enterJackpotTransaction({programId:requireFateProgramId(),player:wallet.address!,roundId:BigInt(round.numeric_id),amountLamports});
       const operationId=crypto.randomUUID();
-      const signature = await wallet.sendTransaction(transaction,{operationId,gameType:"jackpot",action:"enter_jackpot",amountLamports:solToLamports(amount)}, status => notify({title:status === "awaiting_approval" ? "Approve in wallet" : `Transaction ${status}`,text:status === "finalized" ? "Your entry is finalized on Solana." : "Waiting for Solana confirmation…"}));
+      const signature = await wallet.sendTransaction(transaction,{operationId,gameType:"jackpot",action:"enter_jackpot",amountLamports}, status => notify({title:status === "awaiting_approval" ? "Approve in wallet" : `Transaction ${status}`,text:status === "finalized" ? "Your entry is finalized on Solana." : "Waiting for Solana confirmation…"}));
       logEvent({eventType:"jackpot_entry_finalized",category:"transaction",gameType:"jackpot",status:"success",walletAddress:wallet.address!,metadata:{signature,round:round.numeric_id}});
       await refresh();
     } catch (cause) { notify({title:"Entry failed",text:cause instanceof Error?cause.message:"The transaction could not be submitted."}); }
@@ -166,7 +178,7 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
       <div className="hero-stats">
         <Stat icon={<Coins size={20} />} label="Total pot" value={`${pot.toFixed(2)} SOL`} accent />
         <Stat icon={<Users size={20} />} label="Feed" value={loading ? "Loading" : error ? "Offline" : "Finalized"} />
-        <Stat icon={<Clock3 size={20} />} label="Drawing in" value={`00:${String(seconds).padStart(2, "0")}`} />
+        <Stat icon={<Clock3 size={20} />} label="Drawing in" value={round?`${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`:"—"} />
       </div></div>
       <div className="jackpot-visual">{reduceMotion||!webglReady?<div className="vault-fallback"><SolIcon/><strong>{pot.toFixed(2)}</strong><span>SOL POT</span></div>:<Suspense fallback={<div className="canvas-loader"><span/></div>}><JackpotVault3D pot={pot} chance={chance} seconds={seconds} active={submitting||seconds<4}/></Suspense>}</div>
     </section>
@@ -176,10 +188,10 @@ function Jackpot({ wallet, onConnect, notify }: { wallet: WalletClient; onConnec
         <div className="card-head"><div><span className="kicker">CURRENT POT</span><h2><SolIcon /> <AnimatedNumber value={pot}/> <small>SOL</small></h2></div><div className="chance-ring" style={{ "--chance": `${chance * 3.6}deg` } as React.CSSProperties}><div><strong>{chance.toFixed(1)}%</strong><span>YOUR CHANCE</span></div></div></div>
         <div className="pot-line"><span style={{width:"100%",background:"#c8ff4d"}} /></div>
         <div className="entry-label"><span>Your entry</span><span>Available: {connected && wallet.balance !== null ? wallet.balance.toFixed(3) : "—"} SOL</span></div>
-        <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Jackpot entry amount in SOL"/><span aria-hidden="true">SOL</span><button type="button" onClick={() => setAmount(connected ? "24.82" : "1.00")}>MAX</button></div>
+        <div className="amount-input"><SolIcon /><input value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="Jackpot entry amount in SOL"/><span aria-hidden="true">SOL</span><button type="button" disabled={maxLoading||!connected||wallet.balance===null||!round||seconds===0} onClick={()=>void selectMaximum()}>{maxLoading?<LoaderCircle className="spin" size={15}/>:"MAX"}</button></div>
         <div className="presets" role="group" aria-label="Jackpot amount presets">{["0.10", "0.25", "0.50", "1.00"].map(v => <button type="button" aria-pressed={amount === v} className={amount === v ? "selected" : ""} key={v} onClick={() => setAmount(v)}>{v}</button>)}</div>
-        <button className="primary" disabled={submitting} aria-describedby="jackpot-action-hint" onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
-        <div className="fee-note" id="jackpot-action-hint"><ShieldCheck size={14} /> {!connected ? "Opens the wallet connection popup" : !round ? "No open round is currently indexed" : "Secured by Solana · 3% winner fee"}</div>
+        <button className="primary" disabled={submitting||(connected&&(!round||seconds===0))} aria-describedby="jackpot-action-hint" onClick={()=>void enter()}>{submitting ? <><LoaderCircle className="spin" size={18}/> Confirming on Solana…</> : connected ? <><Zap size={18} fill="currentColor" /> Enter jackpot · {amount || "0"} SOL</> : <><Wallet size={18} /> Connect wallet to enter</>}</button>
+        <div className="fee-note" id="jackpot-action-hint"><ShieldCheck size={14} /> {!connected ? "Opens the wallet connection popup" : !round ? "No open round is currently indexed" : seconds===0?"This round has expired; waiting for the finalized index":"MAX reserves the estimated network fee and respects wager/play limits"}</div>
       </div>
 
       <div className="card live-card">

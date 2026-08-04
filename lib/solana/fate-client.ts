@@ -20,6 +20,8 @@ export const COINFLIP_RANDOMNESS_TIMEOUT_SECONDS = 600;
 export type DailyPlayerState = "open" | "randomness_requested" | "settled" | "refunded";
 export type DailyPlayerAccount = { player: string; state: DailyPlayerState; lastOpenedAt: number; randomnessRequestedAt: number; randomnessHex: string | null; randomnessAccount: string | null; randomnessSeedSlot: bigint; randomnessRevealSlot: bigint; rewardLamports: bigint };
 export type CoinflipGameAccount = { address: string; id: bigint; creator: string; joiner: string | null; creatorSide: "Heads"|"Tails"; amountLamports: bigint; state: DailyPlayerState; expiresAt: number; randomnessRequestedAt: number; randomnessHex: string | null; randomnessAccount: string | null; randomnessSeedSlot: bigint; randomnessRevealSlot: bigint; winner: string | null };
+export type FateWagerConfig = { feeBps: number; minWagerLamports: bigint; maxWagerLamports: bigint };
+export function usableJackpotLamports(input:{walletLamports:bigint;estimatedFeeLamports:bigint;safetyReserveLamports:bigint;programMaxLamports:bigint;dailyRemainingLamports?:bigint|null;weeklyRemainingLamports?:bigint|null}){let maximum=input.walletLamports-input.estimatedFeeLamports-input.safetyReserveLamports;if(maximum<0n)maximum=0n;for(const limit of [input.programMaxLamports,input.dailyRemainingLamports,input.weeklyRemainingLamports])if(limit!==null&&limit!==undefined&&maximum>limit)maximum=limit;return maximum;}
 function u64(value: bigint) { const data = Buffer.alloc(8); data.writeBigUInt64LE(value); return data; }
 function i64(value: bigint) { const data = Buffer.alloc(8); data.writeBigInt64LE(value); return data; }
 function ix(programId: PublicKey, data: Uint8Array[], keys: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[]) { return new TransactionInstruction({ programId, keys, data: Buffer.concat(data.map(Buffer.from)) }); }
@@ -107,6 +109,11 @@ export async function fetchCoinflipSettlementContext(input:{rpcUrl:string;progra
   const [randomnessInfo,configInfo]=await Promise.all([connection.getAccountInfo(new PublicKey(game.randomnessAccount),"confirmed"),connection.getAccountInfo(configAddress,"confirmed")]);if(!randomnessInfo||randomnessInfo.data.length<184)throw new Error("The committed randomness account is unavailable.");if(!configInfo||configInfo.data.length<248||!Buffer.from(configInfo.data).subarray(0,8).equals(CONFIG_DISCRIMINATOR))throw new Error("The FATE configuration account is unavailable.");
   const revealSlot=Buffer.from(randomnessInfo.data).readBigUInt64LE(144);if(revealSlot<=game.randomnessSeedSlot)throw new Error("The oracle has not revealed this Coinflip yet.");const landed=randomnessInfo.data[152]&1;const winner=landed===(game.creatorSide==="Heads"?0:1)?game.creator:game.joiner;const treasury=new PublicKey(Buffer.from(configInfo.data).subarray(216,248)).toBase58();return{game,winner,treasury};
 }
+
+export async function fetchFateWagerConfig(input:{rpcUrl:string;programId:string}):Promise<FateWagerConfig>{
+  const program=new PublicKey(input.programId),account=await new Connection(input.rpcUrl,"confirmed").getAccountInfo(fateAddresses(program).config,"confirmed");if(!account)throw new Error("The FATE wager configuration is unavailable.");return decodeFateWagerConfig(account.data);
+}
+export function decodeFateWagerConfig(bytes:Uint8Array):FateWagerConfig{const data=Buffer.from(bytes);if(data.length<390||!data.subarray(0,8).equals(CONFIG_DISCRIMINATOR))throw new Error("The FATE configuration account is invalid.");return{feeBps:data.readUInt16LE(344),minWagerLamports:data.readBigUInt64LE(348),maxWagerLamports:data.readBigUInt64LE(356)};}
 
 export async function fetchDailyPlayerAccount(input: { rpcUrl: string; programId: string; player: string }) {
   const program = new PublicKey(input.programId), player = new PublicKey(input.player), address = fateAddresses(program).daily(player);
