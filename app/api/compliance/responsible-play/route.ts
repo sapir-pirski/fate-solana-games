@@ -1,17 +1,21 @@
-import { and, eq, gte } from "drizzle-orm";
-import { ensureAiSchema, ensureGameSchema, getDb, withDatabase } from "../../../../db";
-import { gameEntries, responsiblePlayLimits } from "../../../../db/schema";
+import { eq } from "drizzle-orm";
+import { ensureAiSchema, ensureAuthSchema, ensureGameSchema, getD1, getDb, withDatabase } from "../../../../db";
+import { responsiblePlayLimits } from "../../../../db/schema";
 import { authenticatedWallet, nowSeconds, requireSameOrigin } from "@/server/services/auth";
 import { auditCompliance } from "@/server/services/compliance";
+import { readSpendingSnapshot } from "@/server/services/wager-reservations";
 
 export async function GET(request: Request) { return withDatabase(async () => {
   const session = await authenticatedWallet(request); if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 });
-  await Promise.all([ensureAiSchema(), ensureGameSchema()]);
+  await Promise.all([ensureAiSchema(), ensureAuthSchema(), ensureGameSchema()]);
   const [current] = await getDb().select().from(responsiblePlayLimits).where(eq(responsiblePlayLimits.walletAddress, session.walletAddress)).limit(1);
-  const weekStart = new Date(Date.now() - 7 * 86_400_000).toISOString(); const dayStart = new Date(Date.now() - 86_400_000).toISOString();
-  const recent = await getDb().select().from(gameEntries).where(and(eq(gameEntries.walletAddress, session.walletAddress), gte(gameEntries.createdAt, weekStart)));
-  const dailySpent = recent.filter(entry => entry.createdAt >= dayStart).reduce((sum, entry) => sum + entry.amountLamports, 0); const weeklySpent = recent.reduce((sum, entry) => sum + entry.amountLamports, 0);
-  return Response.json({ limits: current ?? null, dailySpent, weeklySpent, dailyRemaining: current?.dailyLamports == null ? null : Math.max(0, current.dailyLamports - dailySpent), weeklyRemaining: current?.weeklyLamports == null ? null : Math.max(0, current.weeklyLamports - weeklySpent) }, { headers: { "cache-control": "private, no-store" } });
+  const spending = await readSpendingSnapshot(getD1(), session.walletAddress);
+  return Response.json({
+    limits: current ?? null,
+    ...spending,
+    dailyRemaining: current?.dailyLamports == null ? null : Math.max(0, current.dailyLamports - spending.dailySpent),
+    weeklyRemaining: current?.weeklyLamports == null ? null : Math.max(0, current.weeklyLamports - spending.weeklySpent),
+  }, { headers: { "cache-control": "private, no-store" } });
 }); }
 
 export async function POST(request: Request) { return withDatabase(async () => {

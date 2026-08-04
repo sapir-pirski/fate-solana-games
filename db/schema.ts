@@ -96,12 +96,14 @@ export const gameEntries = sqliteTable(
     signature: text("signature").notNull(),
     eventIndex: integer("event_index").notNull().default(0),
     slot: integer("slot").notNull(),
+    occurredAt: integer("occurred_at").notNull().default(0),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     uniqueIndex("game_entries_event_uidx").on(table.signature, table.eventIndex, table.role, table.walletAddress),
     index("game_entries_game_idx").on(table.gameAddress, table.slot),
     index("game_entries_wallet_idx").on(table.walletAddress, table.slot),
+    index("game_entries_wallet_occurred_idx").on(table.walletAddress, table.occurredAt),
   ],
 );
 
@@ -145,10 +147,11 @@ export const transactionOperations = sqliteTable("transaction_operations", {
   gameType: text("game_type").notNull(), action: text("action").notNull(), status: text("status").notNull(),
   amountLamports: integer("amount_lamports").notNull().default(0), gameAddress: text("game_address").notNull().default(""),
   programId: text("program_id").notNull().default(""), messageHash: text("message_hash").notNull().default(""),
+  reservedAt: integer("reserved_at").notNull().default(0),
   signature: text("signature"), errorCode: text("error_code"), errorMessage: text("error_message"), attempts: integer("attempts").notNull().default(0),
   lastValidBlockHeight: integer("last_valid_block_height"), expiresAt: integer("expires_at").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table => [uniqueIndex("transaction_operations_operation_uidx").on(table.operationId), uniqueIndex("transaction_operations_signature_uidx").on(table.signature), index("transaction_operations_wallet_status_idx").on(table.walletAddress, table.status)]);
+}, table => [uniqueIndex("transaction_operations_operation_uidx").on(table.operationId), uniqueIndex("transaction_operations_signature_uidx").on(table.signature), index("transaction_operations_wallet_status_idx").on(table.walletAddress, table.status), index("transaction_operations_wallet_reserved_idx").on(table.walletAddress, table.reservedAt, table.status)]);
 
 export const rateLimitBuckets = sqliteTable("rate_limit_buckets", {
   key: text("key").primaryKey(), scope: text("scope").notNull(), subjectHash: text("subject_hash").notNull(),

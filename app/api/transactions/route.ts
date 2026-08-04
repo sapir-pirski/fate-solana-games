@@ -2,22 +2,23 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import { env } from "cloudflare:workers";
-import { ensureAuthSchema, getDb, withDatabase } from "../../../db";
+import { ensureAuthSchema, ensureGameSchema, getDb, withDatabase } from "../../../db";
 import { transactionOperations } from "../../../db/schema";
 import { authenticatedWallet, nowSeconds, OPERATION_PATTERN, requireSameOrigin } from "@/server/services/auth";
 import { enforceRateLimit, enqueueJob, rateLimitResponse } from "@/server/services/coordination";
-import { auditCompliance, wagerDecision } from "@/server/services/compliance";
+import { auditCompliance, complianceDecision } from "@/server/services/compliance";
 import { isValidGameAction } from "@/lib/transactions";
 import { decodeTransactionIntent, TransactionIntentError } from "@/lib/solana/transaction-intent";
 import { processTransactionConfirmationJobs } from "@/server/services/transaction-confirmation";
+import { readSpendingSnapshot, reserveWagerOperation } from "@/server/services/wager-reservations";
 
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{80,100}$/;
-const CLIENT_STATES = new Set(["awaiting_signature", "submitted", "rejected", "failed", "expired", "unknown"]);
+const CLIENT_STATES = new Set(["awaiting_signature", "submitted", "rejected", "unknown"]);
 const transitions: Record<string, Set<string>> = {
-  draft: new Set(["awaiting_signature", "failed"]),
-  awaiting_signature: new Set(["submitted", "rejected", "failed", "expired"]),
-  submitted: new Set(["failed", "expired", "unknown"]),
-  unknown: new Set(["submitted", "failed", "expired"]),
+  draft: new Set(["awaiting_signature"]),
+  awaiting_signature: new Set(["submitted", "rejected", "unknown"]),
+  submitted: new Set(["unknown"]),
+  unknown: new Set(["submitted"]),
 };
 const COINFLIP_GAME_DISCRIMINATOR = Buffer.from([103, 119, 176, 171, 170, 204, 73, 25]);
 
@@ -66,7 +67,7 @@ async function coinflipJoinAmount(gameAddress: string, programId: string) {
 
 export async function GET(request: Request) {
   return withDatabase(async () => {
-    await ensureAuthSchema();
+    await Promise.all([ensureAuthSchema(), ensureGameSchema()]);
     const session = await authenticatedWallet(request);
     if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 });
     if (env.DB) await processTransactionConfirmationJobs({ db: env.DB, limit: 3 }).catch(() => undefined);
@@ -82,7 +83,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return withDatabase(async () => {
     if (!requireSameOrigin(request)) return Response.json({ code: "INVALID_ORIGIN" }, { status: 403 });
-    await ensureAuthSchema();
+    await Promise.all([ensureAuthSchema(), ensureGameSchema()]);
     const session = await authenticatedWallet(request);
     if (!session) return Response.json({ code: "UNAUTHENTICATED" }, { status: 401 });
     const body = await request.json() as Record<string, unknown>;
@@ -111,14 +112,6 @@ export async function POST(request: Request) {
     } catch {
       return Response.json({ code: "WAGER_VERIFICATION_UNAVAILABLE" }, { status: 503 });
     }
-    const compliance = await wagerDecision(session.walletAddress, amountLamports);
-    if (!compliance.allowed) {
-      await auditCompliance(session.walletAddress, "transaction_gate", "denied", compliance.code, { amountLamports, messageHash: intent.messageHash });
-      return Response.json({ code: compliance.code, complianceRequired: true }, { status: 403 });
-    }
-    const rate = await enforceRateLimit({ scope: "transaction_create", subject: session.walletAddress, limit: 20, windowSeconds: 60 });
-    if (!rate.allowed) return rateLimitResponse(rate);
-
     const [existing] = await getDb().select().from(transactionOperations).where(eq(transactionOperations.operationId, operationId)).limit(1);
     if (existing) {
       if (existing.walletAddress !== session.walletAddress) return Response.json({ code: "OPERATION_CONFLICT" }, { status: 409 });
@@ -126,14 +119,36 @@ export async function POST(request: Request) {
       return Response.json({ operation: existing, idempotent: true });
     }
 
+    const compliance = await complianceDecision(session.walletAddress);
+    if (!compliance.allowed) {
+      await auditCompliance(session.walletAddress, "transaction_gate", "denied", compliance.code, { amountLamports, messageHash: intent.messageHash });
+      return Response.json({ code: compliance.code, complianceRequired: true }, { status: 403 });
+    }
+    const rate = await enforceRateLimit({ scope: "transaction_create", subject: session.walletAddress, limit: 20, windowSeconds: 60 });
+    if (!rate.allowed) return rateLimitResponse(rate);
+
     const now = nowSeconds();
     const operation = {
       id: crypto.randomUUID(), operationId, walletAddress: session.walletAddress,
       gameType: intent.gameType, action: intent.action, status: "draft",
       amountLamports, gameAddress: intent.gameAddress, programId: intent.programId, messageHash: intent.messageHash,
-      lastValidBlockHeight, expiresAt: now + 600, attempts: 0, updatedAt: new Date().toISOString(),
+      lastValidBlockHeight, reservedAt: now, expiresAt: now + 600, attempts: 0, updatedAt: new Date().toISOString(),
     };
-    await getDb().insert(transactionOperations).values(operation);
+    const reservation = await reserveWagerOperation(env.DB, operation);
+    if (!reservation.reserved) {
+      const [raced] = await getDb().select().from(transactionOperations).where(eq(transactionOperations.operationId, operationId)).limit(1);
+      if (raced) {
+        if (raced.walletAddress !== session.walletAddress) return Response.json({ code: "OPERATION_CONFLICT" }, { status: 409 });
+        if (raced.messageHash !== intent.messageHash) return Response.json({ code: "OPERATION_INTENT_CONFLICT" }, { status: 409 });
+        return Response.json({ operation: raced, idempotent: true });
+      }
+      const spending = await readSpendingSnapshot(env.DB, session.walletAddress, now);
+      const code = compliance.limits?.dailyLamports != null && spending.dailySpent + amountLamports > compliance.limits.dailyLamports
+        ? "DAILY_LIMIT_EXCEEDED"
+        : "WEEKLY_LIMIT_EXCEEDED";
+      await auditCompliance(session.walletAddress, "transaction_gate", "denied", code, { amountLamports, messageHash: intent.messageHash, ...spending });
+      return Response.json({ code, complianceRequired: true }, { status: 403 });
+    }
     await auditCompliance(session.walletAddress, "transaction_gate", "allowed", null, {
       gameType: intent.gameType, action: intent.action, amountLamports, gameAddress: intent.gameAddress,
       messageHash: intent.messageHash, network: process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet",
@@ -158,6 +173,7 @@ export async function PATCH(request: Request) {
     if (current.status !== status && !transitions[current.status]?.has(status)) return Response.json({ code: "INVALID_TRANSITION", from: current.status, to: status }, { status: 409 });
     const submittedSignature = typeof body.signature === "string" ? body.signature : null;
     if (status === "submitted" && (!submittedSignature || !SIGNATURE_PATTERN.test(submittedSignature))) return Response.json({ code: "INVALID_SIGNATURE" }, { status: 400 });
+    if (status === "submitted" && current.signature && current.signature !== submittedSignature) return Response.json({ code: "SIGNATURE_CONFLICT" }, { status: 409 });
     const signature = submittedSignature ?? current.signature;
     const errorCode = typeof body.errorCode === "string" ? body.errorCode.slice(0, 100) : null;
     const errorMessage = typeof body.errorMessage === "string" ? body.errorMessage.slice(0, 500) : null;

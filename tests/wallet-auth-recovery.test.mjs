@@ -17,10 +17,10 @@ test("wallet sessions use signed challenges and hashed HttpOnly cookies",()=>{
 });
 
 test("transaction recovery has an explicit guarded state machine",()=>{
-  for(const state of ["draft","awaiting_signature","submitted","confirmed","rejected","failed","expired","unknown"])assert.match(transactions,new RegExp(`\\"${state}\\"`));
-  assert.match(confirmationWorker,/"finalized"/);
+  for(const state of ["draft","awaiting_signature","submitted","rejected","unknown"])assert.match(transactions,new RegExp(`\\"${state}\\"`));
+  for(const state of ["confirmed","failed","expired","finalized"])assert.match(confirmationWorker,new RegExp(`[\"']${state}[\"']`));
   assert.match(confirmationWorker,/verifyFinalizedIntent/);
-  assert.doesNotMatch(transactions,/CLIENT_STATES[^;]+finalized/);
+  assert.doesNotMatch(transactions,/CLIENT_STATES[^;]+(?:confirmed|failed|expired|finalized)/);
   assert.match(transactions,/INVALID_TRANSITION/);
   assert.match(transactions,/operation_id TEXT NOT NULL UNIQUE|operationId/);
 });

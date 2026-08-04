@@ -150,13 +150,13 @@ export function useSolanaWallet() {
     let output; try {[output] = await wallet.features[SolanaSignAndSendTransaction].signAndSendTransaction({
       account, chain: CHAIN as `${string}:${string}`, transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
       options: { commitment: "confirmed", skipPreflight: false, maxRetries: 3 },
-    });}catch(cause){const message=cause instanceof Error?cause.message:"Wallet request failed";const rejected=/reject|declin|cancel/i.test(message);await updateOperation(operation.operationId,rejected?"rejected":"failed",{errorCode:rejected?"WALLET_REJECTED":"SUBMISSION_FAILED",errorMessage:message});throw cause;}
-    if (!output) throw new Error("The wallet returned no transaction signature.");
+    });}catch(cause){const message=cause instanceof Error?cause.message:"Wallet request failed";const rejected=/reject|declin|cancel/i.test(message);await updateOperation(operation.operationId,rejected?"rejected":"unknown",{errorCode:rejected?"WALLET_REJECTED":"SUBMISSION_STATUS_UNKNOWN",errorMessage:message});throw cause;}
+    if (!output) {await updateOperation(operation.operationId,"unknown",{errorCode:"MISSING_SIGNATURE"});throw new Error("The wallet returned no transaction signature.");}
     const signature = base58(output.signature); onStatus?.("submitted"); await updateOperation(operation.operationId,"submitted",{signature,lastValidBlockHeight:latest.lastValidBlockHeight});
     const deadline = Date.now() + 90_000;
     while (Date.now() < deadline) {
       let status=null;for(const endpoint of rpcUrls){try{status=(await new Connection(endpoint,"confirmed").getSignatureStatuses([signature],{searchTransactionHistory:true})).value[0];if(status)break;}catch{await new Promise(resolve=>setTimeout(resolve,250+Math.random()*500));}}
-      if (status?.err) {await updateOperation(operation.operationId,"failed",{signature,errorCode:"CHAIN_ERROR",errorMessage:JSON.stringify(status.err)});throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);}
+      if (status?.err) {setOperationState(operation.operationId,"failed",{signature,errorCode:"CHAIN_ERROR",errorMessage:JSON.stringify(status.err)});throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);}
       if(status?.confirmationStatus==="confirmed"){onStatus?.("confirmed");setOperationState(operation.operationId,"confirmed",{signature});}
       if (status?.confirmationStatus === "finalized") {
         const verified=await fetch("/api/transactions",{cache:"no-store"});

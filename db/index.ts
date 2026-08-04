@@ -12,6 +12,11 @@ export function getDb() {
   return drizzleD1(env.DB, { schema });
 }
 
+export function getD1() {
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  return env.DB;
+}
+
 export async function withDatabase<T>(operation: () => Promise<T>): Promise<T> {
   const started = Date.now();
   try { return await withSpan("database.operation", { component: "database", backend: "d1" }, operation); }
@@ -32,6 +37,10 @@ export async function ensureGameSchema() {
     if (entryColumns.results.length && !entryColumns.results.some(column => column.name === "event_index")) {
       await env.DB.prepare("ALTER TABLE game_entries ADD COLUMN event_index INTEGER NOT NULL DEFAULT 0").run();
     }
+    if (entryColumns.results.length && !entryColumns.results.some(column => column.name === "occurred_at")) {
+      await env.DB.prepare("ALTER TABLE game_entries ADD COLUMN occurred_at INTEGER NOT NULL DEFAULT 0").run();
+      await env.DB.prepare("UPDATE game_entries SET occurred_at=COALESCE(CAST(strftime('%s',created_at) AS INTEGER),CAST(strftime('%s','now') AS INTEGER)) WHERE occurred_at=0").run();
+    }
     return env.DB.batch([
       env.DB.prepare("CREATE TABLE IF NOT EXISTS chain_events (id TEXT PRIMARY KEY NOT NULL, signature TEXT NOT NULL, instruction_index INTEGER NOT NULL, event_index INTEGER NOT NULL, slot INTEGER NOT NULL, block_time INTEGER, program_id TEXT NOT NULL, event_name TEXT NOT NULL, payload_json TEXT NOT NULL, commitment TEXT NOT NULL DEFAULT 'confirmed', ingested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
       env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS chain_events_position_uidx ON chain_events (signature,instruction_index,event_index)"),
@@ -42,11 +51,12 @@ export async function ensureGameSchema() {
       env.DB.prepare("CREATE INDEX IF NOT EXISTS games_type_state_idx ON games (game_type,state)"),
       env.DB.prepare("CREATE INDEX IF NOT EXISTS games_winner_idx ON games (winner)"),
       env.DB.prepare("CREATE INDEX IF NOT EXISTS games_chain_address_idx ON games (chain_address,last_slot)"),
-      env.DB.prepare("CREATE TABLE IF NOT EXISTS game_entries (id TEXT PRIMARY KEY NOT NULL, game_address TEXT NOT NULL, wallet_address TEXT NOT NULL, role TEXT NOT NULL, amount_lamports INTEGER NOT NULL, signature TEXT NOT NULL, event_index INTEGER NOT NULL DEFAULT 0, slot INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS game_entries (id TEXT PRIMARY KEY NOT NULL, game_address TEXT NOT NULL, wallet_address TEXT NOT NULL, role TEXT NOT NULL, amount_lamports INTEGER NOT NULL, signature TEXT NOT NULL, event_index INTEGER NOT NULL DEFAULT 0, slot INTEGER NOT NULL, occurred_at INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
       env.DB.prepare("DROP INDEX IF EXISTS game_entries_signature_wallet_uidx"),
       env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS game_entries_event_uidx ON game_entries (signature,event_index,role,wallet_address)"),
       env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_game_idx ON game_entries (game_address,slot)"),
       env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_wallet_idx ON game_entries (wallet_address,slot)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_wallet_occurred_idx ON game_entries (wallet_address,occurred_at)"),
       env.DB.prepare("CREATE TABLE IF NOT EXISTS indexer_checkpoints (consumer TEXT PRIMARY KEY NOT NULL, last_signature TEXT, last_slot INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'healthy', last_error TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     ]);
   })().catch((error: unknown) => { gameSchemaReady = null; throw error; });
@@ -120,14 +130,19 @@ export async function ensureAuthSchema() {
       if (!names.has("game_address")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN game_address TEXT NOT NULL DEFAULT ''").run();
       if (!names.has("program_id")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN program_id TEXT NOT NULL DEFAULT ''").run();
       if (!names.has("message_hash")) await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN message_hash TEXT NOT NULL DEFAULT ''").run();
+      if (!names.has("reserved_at")) {
+        await env.DB.prepare("ALTER TABLE transaction_operations ADD COLUMN reserved_at INTEGER NOT NULL DEFAULT 0").run();
+        await env.DB.prepare("UPDATE transaction_operations SET reserved_at=COALESCE(CAST(strftime('%s',created_at) AS INTEGER),CAST(strftime('%s','now') AS INTEGER)) WHERE reserved_at=0").run();
+      }
     }
     return env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_auth_challenges (id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL, nonce_hash TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_auth_challenges_wallet_idx ON wallet_auth_challenges (wallet_address, expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS wallet_sessions (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL, revoked_at INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS wallet_sessions_wallet_idx ON wallet_sessions (wallet_address, expires_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, amount_lamports INTEGER NOT NULL DEFAULT 0, game_address TEXT NOT NULL DEFAULT '', program_id TEXT NOT NULL DEFAULT '', message_hash TEXT NOT NULL DEFAULT '', signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS transaction_operations (id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, wallet_address TEXT NOT NULL, game_type TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, amount_lamports INTEGER NOT NULL DEFAULT 0, game_address TEXT NOT NULL DEFAULT '', program_id TEXT NOT NULL DEFAULT '', message_hash TEXT NOT NULL DEFAULT '', reserved_at INTEGER NOT NULL DEFAULT 0, signature TEXT UNIQUE, error_code TEXT, error_message TEXT, attempts INTEGER NOT NULL DEFAULT 0, last_valid_block_height INTEGER, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS transaction_operations_wallet_status_idx ON transaction_operations (wallet_address, status)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS transaction_operations_wallet_reserved_idx ON transaction_operations (wallet_address,reserved_at,status)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS rate_limit_buckets (key TEXT PRIMARY KEY, scope TEXT NOT NULL, subject_hash TEXT NOT NULL, window_start INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, expires_at INTEGER NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets (expires_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS background_jobs (id TEXT PRIMARY KEY, queue TEXT NOT NULL, dedupe_key TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8, available_at INTEGER NOT NULL, lease_owner TEXT, lease_expires_at INTEGER, last_error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(queue,dedupe_key))"),

@@ -140,7 +140,8 @@ function gameUpsert(context: ProjectionContext, values: { address: string; chain
 
 function entry(context: ProjectionContext, game: string, wallet: string, role: string, amount: number): DatabaseMutation {
   const eventIndex = context.eventIndex ?? 0;
-  return { sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot) VALUES (?,?,?,?,?,?,?,?)", params: [`${context.signature}:${eventIndex}:${role}:${wallet}`, game, wallet, role, amount, context.signature, eventIndex, context.slot] };
+  const occurredAt = context.blockTime ?? Math.floor(Date.now() / 1000);
+  return { sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot,occurred_at) VALUES (?,?,?,?,?,?,?,?,?)", params: [`${context.signature}:${eventIndex}:${role}:${wallet}`, game, wallet, role, amount, context.signature, eventIndex, context.slot, occurredAt] };
 }
 
 export function projectFateEvent(event: FateEvent, context: ProjectionContext): DatabaseMutation[] {
@@ -170,7 +171,7 @@ export function projectFateEvent(event: FateEvent, context: ProjectionContext): 
       const address = String(payload.game), joiner = String(payload.joiner);
       mutations.push({ sql: "UPDATE games SET state='randomness_requested',pot_lamports=wager_lamports*2,last_signature=?,last_slot=?,updated_at=CURRENT_TIMESTAMP WHERE address=? AND last_slot<=?", params: [context.signature, context.slot, address, context.slot] });
       const eventIndex = context.eventIndex ?? 0;
-      mutations.push({ sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot) SELECT ?,address,?,'joiner',wager_lamports,?,?,? FROM games WHERE address=?", params: [`${context.signature}:${eventIndex}:joiner:${joiner}`, joiner, context.signature, eventIndex, context.slot, address] });
+      mutations.push({ sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot,occurred_at) SELECT ?,address,?,'joiner',wager_lamports,?,?,?,? FROM games WHERE address=?", params: [`${context.signature}:${eventIndex}:joiner:${joiner}`, joiner, context.signature, eventIndex, context.slot, context.blockTime ?? Math.floor(Date.now() / 1000), address] });
       break;
     }
     case "RandomnessRequested": {
@@ -210,7 +211,7 @@ export function projectFateEvent(event: FateEvent, context: ProjectionContext): 
       const chainAddress = String(payload.account), player = String(payload.player);
       mutations.push({ sql: "UPDATE games SET state='refunded',settled_at=?,last_signature=?,last_slot=?,updated_at=CURRENT_TIMESTAMP WHERE address=(SELECT address FROM games WHERE chain_address=? AND game_type='daily' AND state='randomness_requested' ORDER BY last_slot DESC LIMIT 1) AND last_slot<=?", params: [context.blockTime, context.signature, context.slot, chainAddress, context.slot] });
       const eventIndex = context.eventIndex ?? 0;
-      mutations.push({ sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot) SELECT ?,address,?,'player',0,?,?,? FROM games WHERE chain_address=? AND game_type='daily' ORDER BY last_slot DESC LIMIT 1", params: [`${context.signature}:${eventIndex}:player:${player}`, player, context.signature, eventIndex, context.slot, chainAddress] });
+      mutations.push({ sql: "INSERT OR IGNORE INTO game_entries (id,game_address,wallet_address,role,amount_lamports,signature,event_index,slot,occurred_at) SELECT ?,address,?,'player',0,?,?,?,? FROM games WHERE chain_address=? AND game_type='daily' ORDER BY last_slot DESC LIMIT 1", params: [`${context.signature}:${eventIndex}:player:${player}`, player, context.signature, eventIndex, context.slot, context.blockTime ?? Math.floor(Date.now() / 1000), chainAddress] });
       break;
     }
     case "GameAccountsClosed":

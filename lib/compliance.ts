@@ -1,7 +1,8 @@
-import { and, eq, gte } from "drizzle-orm";
-import { ensureComplianceSchema, getDb } from "../db";
-import { complianceAuditEvents, complianceProfiles, gameEntries, responsiblePlayLimits } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { ensureAuthSchema, ensureComplianceSchema, ensureGameSchema, getD1, getDb } from "../db";
+import { complianceAuditEvents, complianceProfiles, responsiblePlayLimits } from "../db/schema";
 import { nowSeconds, sha256 } from "./auth";
+import { readSpendingSnapshot } from "@/server/services/wager-reservations";
 
 export const COMPLIANCE_POLICY = { terms: "2026-08-01", privacy: "2026-08-01", risk: "2026-08-01", minimumAge: 18 } as const;
 const countryPattern = /^[A-Z]{2}$/;
@@ -30,9 +31,8 @@ export async function complianceDecision(wallet: string) {
 export async function wagerDecision(wallet: string, proposedLamports: number) {
   const eligibility = await complianceDecision(wallet); if (!eligibility.allowed) return eligibility;
   if (!Number.isSafeInteger(proposedLamports) || proposedLamports < 0) return { ...eligibility, allowed: false, code: "INVALID_WAGER_AMOUNT" };
-  const weekStart = new Date(Date.now() - 7 * 86_400_000).toISOString(); const dayStart = new Date(Date.now() - 86_400_000).toISOString();
-  const recent = await getDb().select().from(gameEntries).where(and(eq(gameEntries.walletAddress, wallet), gte(gameEntries.createdAt, weekStart)));
-  const dailySpent = recent.filter(entry => entry.createdAt >= dayStart).reduce((sum, entry) => sum + entry.amountLamports, 0); const weeklySpent = recent.reduce((sum, entry) => sum + entry.amountLamports, 0);
+  await Promise.all([ensureAuthSchema(), ensureGameSchema()]);
+  const { dailySpent, weeklySpent } = await readSpendingSnapshot(getD1(), wallet);
   if (eligibility.limits?.dailyLamports != null && dailySpent + proposedLamports > eligibility.limits.dailyLamports) return { ...eligibility, allowed: false, code: "DAILY_LIMIT_EXCEEDED" };
   if (eligibility.limits?.weeklyLamports != null && weeklySpent + proposedLamports > eligibility.limits.weeklyLamports) return { ...eligibility, allowed: false, code: "WEEKLY_LIMIT_EXCEEDED" };
   return { ...eligibility, dailySpent, weeklySpent, proposedLamports };
