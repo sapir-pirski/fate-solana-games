@@ -101,10 +101,21 @@ export async function pruneEventLogs(retentionDays: number) {
 let aiSchemaReady: Promise<unknown> | null = null;
 export async function ensureAiSchema() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
-  if (!aiSchemaReady) aiSchemaReady = env.DB.batch([
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_conversations (id TEXT PRIMARY KEY NOT NULL, wallet_address TEXT, title TEXT NOT NULL DEFAULT 'FATE Copilot', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+  if (!aiSchemaReady) aiSchemaReady = (async () => {
+    const conversationColumns = await env.DB.prepare("PRAGMA table_info(ai_conversations)").all<{ name: string }>();
+    if (conversationColumns.results.length && !conversationColumns.results.some(column => column.name === "owner_key")) {
+      await env.DB.prepare("ALTER TABLE ai_conversations ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'legacy'").run();
+      await env.DB.prepare("UPDATE ai_conversations SET owner_key=CASE WHEN wallet_address IS NOT NULL THEN 'wallet:' || wallet_address ELSE 'legacy:' || id END WHERE owner_key='legacy'").run();
+    }
+    const messageColumns = await env.DB.prepare("PRAGMA table_info(ai_messages)").all<{ name: string }>();
+    if (messageColumns.results.length && !messageColumns.results.some(column => column.name === "feedback_token_hash")) {
+      await env.DB.prepare("ALTER TABLE ai_messages ADD COLUMN feedback_token_hash TEXT").run();
+    }
+    return env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_conversations (id TEXT PRIMARY KEY NOT NULL, wallet_address TEXT, owner_key TEXT NOT NULL DEFAULT 'legacy', title TEXT NOT NULL DEFAULT 'FATE Copilot', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_conversations_wallet_idx ON ai_conversations (wallet_address, updated_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_messages (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, model TEXT, response_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_conversations_owner_idx ON ai_conversations (owner_key, updated_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_messages (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, model TEXT, response_id TEXT, feedback_token_hash TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS ai_messages_conversation_idx ON ai_messages (conversation_id, created_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ai_tool_calls (id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, call_id TEXT NOT NULL, tool_name TEXT NOT NULL, arguments_json TEXT NOT NULL, result_json TEXT, status TEXT NOT NULL, duration_ms INTEGER, error_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ai_tool_calls_call_uidx ON ai_tool_calls (call_id)"),
@@ -115,7 +126,8 @@ export async function ensureAiSchema() {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS responsible_play_limits (wallet_address TEXT PRIMARY KEY NOT NULL, daily_lamports INTEGER, weekly_lamports INTEGER, cooldown_until INTEGER, self_excluded_until INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY NOT NULL, agent_type TEXT NOT NULL, wallet_address TEXT, status TEXT NOT NULL, input_json TEXT NOT NULL, output_json TEXT, error_code TEXT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS agent_alerts (id TEXT PRIMARY KEY NOT NULL, alert_type TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', subject TEXT NOT NULL, evidence_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT)"),
-  ]).catch((error: unknown) => { aiSchemaReady = null; throw error; });
+    ]);
+  })().catch((error: unknown) => { aiSchemaReady = null; throw error; });
   await aiSchemaReady;
 }
 

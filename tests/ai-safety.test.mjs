@@ -23,14 +23,24 @@ test("Responses calls are stateless and tool rounds are bounded", async () => {
 
 test("saved AI conversations are scoped to the authenticated wallet", async () => {
   const route = await read("app/api/ai/chat/route.ts");
-  assert.match(route, /CONVERSATION_AUTH_REQUIRED/);
   assert.match(route, /CONVERSATION_NOT_FOUND/);
   assert.match(route, /eq\(aiConversations\.id, requestedConversationId\)/);
-  assert.match(route, /eq\(aiConversations\.walletAddress, ownerWallet\)/);
+  assert.match(route, /eq\(aiConversations\.ownerKey, ownerKey\)/);
   assert.match(route, /eq\(aiConversations\.status, "active"\)/);
   assert.match(route, /innerJoin\(aiConversations/);
-  assert.match(route, /walletAddress: ownerWallet/);
+  assert.match(route, /walletAddress: ownerWallet, ownerKey/);
   assert.doesNotMatch(route, /values\(\{ id: conversationId, walletAddress \}\)\.onConflictDoNothing/);
+});
+
+test("AI feedback requires message ownership and a message-bound capability", async () => {
+  const route = await read("app/api/ai/feedback/route.ts");
+  assert.match(route, /const session = await authenticatedWallet\(request\)/);
+  assert.match(route, /innerJoin\(aiConversations/);
+  assert.match(route, /eq\(aiConversations\.ownerKey, ownerKey\)/);
+  assert.match(route, /eq\(aiMessages\.role, "assistant"\)/);
+  assert.match(route, /eq\(aiMessages\.feedbackTokenHash, sha256\(feedbackToken\)\)/);
+  assert.match(route, /enforceRateLimit\(\{ scope: "ai_feedback"/);
+  assert.doesNotMatch(route, /\?\? "anonymous"/);
 });
 
 test("unfinished Arena is not exposed in the production Copilot UI", async () => {

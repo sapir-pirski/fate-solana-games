@@ -152,13 +152,13 @@ export const indexerCheckpoints = sqliteTable("indexer_checkpoints", {
 });
 
 export const aiConversations = sqliteTable("ai_conversations", {
-  id: text("id").primaryKey(), walletAddress: text("wallet_address"), title: text("title").notNull().default("FATE Copilot"),
+  id: text("id").primaryKey(), walletAddress: text("wallet_address"), ownerKey: text("owner_key").notNull().default("legacy"), title: text("title").notNull().default("FATE Copilot"),
   status: text("status").notNull().default("active"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, table => [index("ai_conversations_wallet_idx").on(table.walletAddress, table.updatedAt)]);
+}, table => [index("ai_conversations_wallet_idx").on(table.walletAddress, table.updatedAt), index("ai_conversations_owner_idx").on(table.ownerKey, table.updatedAt)]);
 
 export const aiMessages = sqliteTable("ai_messages", {
   id: text("id").primaryKey(), conversationId: text("conversation_id").notNull(), role: text("role").notNull(), content: text("content").notNull(),
-  model: text("model"), responseId: text("response_id"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  model: text("model"), responseId: text("response_id"), feedbackTokenHash: text("feedback_token_hash"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, table => [index("ai_messages_conversation_idx").on(table.conversationId, table.createdAt)]);
 
 export const aiToolCalls = sqliteTable("ai_tool_calls", {

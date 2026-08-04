@@ -4,21 +4,23 @@ import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiConversations, aiMessages, aiToolCalls, aiUsage } from "../../../../db/schema";
 import { FATE_AI_SYSTEM_PROMPT, BASE58, redactError, safeModel, validatePrompt, walletHash } from "../../../../lib/ai/policy";
 import { AI_TOOLS, executeAiTool } from "../../../../lib/ai/tools";
-import { authenticatedWallet, anonymousRequestSubject, requireSameOrigin } from "@/server/services/auth";
+import { AI_ANONYMOUS_COOKIE, aiAnonymousCookie, authenticatedWallet, parseCookie, randomToken, requireSameOrigin, sha256 } from "@/server/services/auth";
 import { enforceRateLimit, rateLimitResponse } from "@/server/services/coordination";
 import { increment, jsonLog, observe, withSpan } from "../../../../lib/telemetry";
 
 const MAX_MESSAGE = 2_000;
 const MAX_TOOL_ROUNDS = 3;
 const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-function streamAnswer(answer: string, metadata: Record<string, unknown>) {
+function streamAnswer(answer: string, metadata: Record<string, unknown>, setCookie?: string) {
   const encoder = new TextEncoder();
+  const headers = new Headers({ "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", connection: "keep-alive" });
+  if (setCookie) headers.set("set-cookie", setCookie);
   return new Response(new ReadableStream({ start(controller) {
     controller.enqueue(encoder.encode(`event: meta\ndata: ${JSON.stringify(metadata)}\n\n`));
     const parts = answer.match(/\S+\s*/g) ?? [answer];
     for (const part of parts) controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ delta: part })}\n\n`));
     controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`)); controller.close();
-  } }), { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", connection: "keep-alive" } });
+  } }), { headers });
 }
 
 async function handlePost(request: Request) {
@@ -33,8 +35,13 @@ async function handlePost(request: Request) {
     if (!promptCheck.allowed) return Response.json({ code: promptCheck.code, message: "Remove secrets or instruction-override text and try again.", requestId }, { status: 400 });
     const session = await authenticatedWallet(request);
     if (walletAddress && session?.walletAddress !== walletAddress) return Response.json({ code: "WALLET_AUTH_REQUIRED", message: "Authenticate the connected wallet to access wallet-specific data.", requestId }, { status: 401 });
-    const rateSubject = session?.walletAddress ?? anonymousRequestSubject(request);
-    const rateKey = walletHash(session?.walletAddress) ?? `anonymous_${walletHash(rateSubject)}`;
+    const storedAnonymousToken = session ? null : parseCookie(request, AI_ANONYMOUS_COOKIE);
+    const validAnonymousToken = storedAnonymousToken && /^[A-Za-z0-9_-]{32,128}$/.test(storedAnonymousToken) ? storedAnonymousToken : null;
+    const anonymousToken = session ? null : validAnonymousToken ?? randomToken();
+    const ownerKey = session ? `wallet:${session.walletAddress}` : `anonymous:${sha256(anonymousToken!)}`;
+    const anonymousCookieHeader = !session && !validAnonymousToken ? aiAnonymousCookie(anonymousToken!) : undefined;
+    const rateSubject = session?.walletAddress ?? ownerKey;
+    const rateKey = walletHash(session?.walletAddress) ?? ownerKey;
     const limit = Math.max(1, Math.min(500, Number(process.env.AI_MAX_REQUESTS_PER_WALLET_DAY ?? 50)));
     const rate = await enforceRateLimit({ scope: "ai_chat", subject: rateSubject, limit, windowSeconds: 86_400 });
     if (!rate.allowed) return rateLimitResponse(rate);
@@ -58,12 +65,9 @@ async function handlePost(request: Request) {
     const ownerWallet = session?.walletAddress ?? null;
     let conversationId: string;
     if (requestedConversationId) {
-      if (!ownerWallet) {
-        return Response.json({ code: "CONVERSATION_AUTH_REQUIRED", message: "Authenticate a wallet to resume a saved conversation.", requestId }, { status: 401 });
-      }
       const [ownedConversation] = await getDb().select({ id: aiConversations.id }).from(aiConversations).where(and(
         eq(aiConversations.id, requestedConversationId),
-        eq(aiConversations.walletAddress, ownerWallet),
+        eq(aiConversations.ownerKey, ownerKey),
         eq(aiConversations.status, "active"),
       )).limit(1);
       if (!ownedConversation) {
@@ -72,19 +76,17 @@ async function handlePost(request: Request) {
       conversationId = ownedConversation.id;
       await getDb().update(aiConversations).set({ updatedAt: new Date().toISOString() }).where(and(
         eq(aiConversations.id, conversationId),
-        eq(aiConversations.walletAddress, ownerWallet),
+        eq(aiConversations.ownerKey, ownerKey),
       ));
     } else {
       conversationId = crypto.randomUUID();
-      await getDb().insert(aiConversations).values({ id: conversationId, walletAddress: ownerWallet });
+      await getDb().insert(aiConversations).values({ id: conversationId, walletAddress: ownerWallet, ownerKey });
     }
     await getDb().insert(aiMessages).values({ id: crypto.randomUUID(), conversationId, role: "user", content: message });
-    const history = ownerWallet
-      ? await getDb().select({ role: aiMessages.role, content: aiMessages.content }).from(aiMessages).innerJoin(aiConversations, and(
-          eq(aiMessages.conversationId, aiConversations.id),
-          eq(aiConversations.walletAddress, ownerWallet),
-        )).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12)
-      : await getDb().select({ role: aiMessages.role, content: aiMessages.content }).from(aiMessages).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12);
+    const history = await getDb().select({ role: aiMessages.role, content: aiMessages.content }).from(aiMessages).innerJoin(aiConversations, and(
+      eq(aiMessages.conversationId, aiConversations.id),
+      eq(aiConversations.ownerKey, ownerKey),
+    )).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12);
     const client = new OpenAI({ apiKey, maxRetries: 2, timeout: Math.max(5_000, Math.min(60_000, Number(process.env.AI_PROVIDER_TIMEOUT_MS ?? 30_000))) }); const model = safeModel(process.env.OPENAI_MODEL);
     let responseInput: unknown[] = history.map(item => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content }));
     const providerStarted = Date.now();
@@ -108,12 +110,13 @@ async function handlePost(request: Request) {
     }
     const answer = response.output_text || "I could not produce a grounded answer. Please try a narrower question.";
     const assistantId = crypto.randomUUID();
-    await getDb().insert(aiMessages).values({ id: assistantId, conversationId, role: "assistant", content: answer, model, responseId: response.id });
+    const feedbackToken = randomToken();
+    await getDb().insert(aiMessages).values({ id: assistantId, conversationId, role: "assistant", content: answer, model, responseId: response.id, feedbackTokenHash: sha256(feedbackToken) });
     const usage = response.usage;
     await getDb().insert(aiUsage).values({ id: crypto.randomUUID(), conversationId, walletHash: rateKey, model, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0, reasoningTokens: usage?.output_tokens_details?.reasoning_tokens ?? 0, cachedTokens: usage?.input_tokens_details?.cached_tokens ?? 0 });
     increment("fate_ai_requests_total", { status: "success", model }); observe("fate_ai_provider_duration_ms", Date.now() - providerStarted, { model });
     jsonLog("info", "ai_chat_complete", "AI response completed", { component: "ai", requestId, model, toolRounds, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0 });
-    return streamAnswer(answer, { requestId, conversationId: ownerWallet ? conversationId : null, messageId: assistantId, model, toolRounds });
+    return streamAnswer(answer, { requestId, conversationId, messageId: assistantId, feedbackToken, model, toolRounds }, anonymousCookieHeader);
   } catch (error) {
     increment("fate_ai_requests_total", { status: "failure" }); jsonLog("error", "ai_chat_failed", "AI response failed", { component: "ai", requestId, errorCode: redactError(error) });
     return Response.json({ code: "AI_UNAVAILABLE", requestId }, { status: 503, headers: { "retry-after": "5" } });

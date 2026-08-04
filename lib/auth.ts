@@ -4,6 +4,7 @@ import { ensureAuthSchema, getDb } from "../db";
 import { walletSessions } from "../db/schema";
 
 export const SESSION_COOKIE = "fate_wallet_session";
+export const AI_ANONYMOUS_COOKIE = "fate_ai_anonymous";
 export const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 export const OPERATION_PATTERN = /^[0-9a-f-]{36}$/i;
 export const TX_STATES = new Set(["draft","awaiting_signature","submitted","confirmed","finalized","rejected","failed","expired","unknown"]);
@@ -19,6 +20,9 @@ export function sessionCookie(token: string, maxAge: number) {
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
 }
 export function clearSessionCookie() { return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`; }
+export function aiAnonymousCookie(token: string, maxAge = 60 * 60 * 12) {
+  return `${AI_ANONYMOUS_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+}
 
 export async function authenticatedWallet(request: Request) {
   await ensureAuthSchema(); const token=parseCookie(request,SESSION_COOKIE); if(!token)return null; const now=nowSeconds();

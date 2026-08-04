@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bot, ChevronRight, Gauge, RotateCcw, Send, ShieldCheck, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-type Message = { id: string; serverId?: string; role: "user" | "assistant"; content: string; rating?: number; retryPrompt?: string };
+type Message = { id: string; serverId?: string; feedbackToken?: string; role: "user" | "assistant"; content: string; rating?: number; retryPrompt?: string };
 type Tab = "copilot" | "limits";
 const WELCOME: Message = { id: "welcome", role: "assistant", content: "I can explain game rules, inspect indexed fairness evidence, diagnose tracked transactions, summarize activity, and prepare unsigned devnet drafts." };
 
@@ -38,15 +38,15 @@ export default function FateCopilot({ walletAddress }: { walletAddress: string |
       if (!response.ok || !response.body) { const error = await response.json().catch(() => ({})) as { message?: string; code?: string }; throw new Error(errorMessage(error.code, error.message)); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const events = buffer.split("\n\n"); buffer = events.pop() ?? "";
-        for (const event of events) { const type = event.match(/^event: (.+)$/m)?.[1]; const data = event.match(/^data: (.+)$/m)?.[1]; if (!data) continue; const parsed = JSON.parse(data) as { delta?: string; conversationId?: string; messageId?: string }; if (type === "meta") { if (parsed.conversationId) setConversationId(parsed.conversationId); if (parsed.messageId) setMessages(current => current.map(item => item.id === assistantId ? { ...item, serverId: parsed.messageId } : item)); } if (type === "delta" && parsed.delta) setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + parsed.delta } : item)); }
+        for (const event of events) { const type = event.match(/^event: (.+)$/m)?.[1]; const data = event.match(/^data: (.+)$/m)?.[1]; if (!data) continue; const parsed = JSON.parse(data) as { delta?: string; conversationId?: string; messageId?: string; feedbackToken?: string }; if (type === "meta") { if (parsed.conversationId) setConversationId(parsed.conversationId); if (parsed.messageId) setMessages(current => current.map(item => item.id === assistantId ? { ...item, serverId: parsed.messageId, feedbackToken: parsed.feedbackToken } : item)); } if (type === "delta" && parsed.delta) setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: item.content + parsed.delta } : item)); }
       }
     } catch (error) { const cancelled = error instanceof DOMException && error.name === "AbortError"; const failure = cancelled ? "Response cancelled." : error instanceof Error ? error.message : "Copilot unavailable"; setMessages(current => current.map(item => item.id === assistantId ? { ...item, content: failure, retryPrompt: cancelled ? undefined : clean } : item)); }
     finally { abortRef.current = null; setBusy(false); }
   }
 
   async function rateMessage(message: Message, rating: 1 | -1) {
-    if (!message.serverId) return;
-    const response = await fetch("/api/ai/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messageId: message.serverId, walletAddress, rating }) });
+    if (!message.serverId || !message.feedbackToken) return;
+    const response = await fetch("/api/ai/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messageId: message.serverId, feedbackToken: message.feedbackToken, walletAddress, rating }) });
     if (response.ok) setMessages(current => current.map(item => item.id === message.id ? { ...item, rating } : item));
   }
 
