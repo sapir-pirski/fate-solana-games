@@ -42,6 +42,15 @@ test("Switchboard commitments are provider-bound, fresh, and replay protected", 
   assert.match(programReadme, /Switchboard On-Demand/i);
 });
 
+test("randomness receipts return rent only on settlement or timeout recovery", () => {
+  assert.match(source, /pub rent_payer: Pubkey/);
+  assert.match(source, /receipt\.rent_payer = rent_payer/);
+  assert.equal((source.match(/close = rent_payer/g) ?? []).length, 6);
+  assert.equal((source.match(/RandomnessReceiptClosed \{/g) ?? []).length, 7);
+  assert.match(source, /address = randomness_receipt\.rent_payer/);
+  assert.match(programReadme, /returns all receipt rent to that original payer/i);
+});
+
 test("public verifier reads Solana directly and reproduces every game outcome", () => {
   assert.match(verifier, /connection\.getAccountInfo/);
   assert.match(verifier, /providerInfo\.owner\.equals/);

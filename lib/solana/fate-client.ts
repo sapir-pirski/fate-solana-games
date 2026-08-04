@@ -42,9 +42,9 @@ export function joinCoinflipTransaction(input: { programId: string; joiner: stri
   return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.joinCoinflip)],[{pubkey:joiner,isSigner:true,isWritable:true},{pubkey:addresses.config,isSigner:false,isWritable:false},{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:true},{pubkey:SystemProgram.programId,isSigner:false,isWritable:false}]));
 }
 
-export function settleCoinflipTransaction(input: { programId: string; gameId: bigint; randomnessAccount: string; winner: string; treasury: string }) {
+export function settleCoinflipTransaction(input: { programId: string; gameId: bigint; randomnessAccount: string; winner: string; treasury: string; rentPayer: string }) {
   const program = new PublicKey(input.programId), randomness = new PublicKey(input.randomnessAccount), addresses = fateAddresses(program), game = addresses.coinflip(input.gameId), receipt = addresses.randomnessReceipt(randomness);
-  return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.settleCoinflip)],[{pubkey:addresses.config,isSigner:false,isWritable:false},{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:false},{pubkey:new PublicKey(input.winner),isSigner:false,isWritable:true},{pubkey:new PublicKey(input.treasury),isSigner:false,isWritable:true}]));
+  return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.settleCoinflip)],[{pubkey:addresses.config,isSigner:false,isWritable:false},{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:true},{pubkey:new PublicKey(input.winner),isSigner:false,isWritable:true},{pubkey:new PublicKey(input.treasury),isSigner:false,isWritable:true},{pubkey:new PublicKey(input.rentPayer),isSigner:false,isWritable:true}]));
 }
 
 export function cancelCoinflipTransaction(input: { programId: string; creator: string; gameId: bigint }) {
@@ -52,9 +52,9 @@ export function cancelCoinflipTransaction(input: { programId: string; creator: s
   return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.cancelCoinflip)],[{pubkey:new PublicKey(input.creator),isSigner:true,isWritable:true},{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true}]));
 }
 
-export function refundCoinflipTimeoutTransaction(input: { programId: string; gameId: bigint; creator: string; joiner: string }) {
-  const program = new PublicKey(input.programId), addresses = fateAddresses(program), game = addresses.coinflip(input.gameId);
-  return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.refundCoinflipTimeout)],[{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true},{pubkey:new PublicKey(input.creator),isSigner:false,isWritable:true},{pubkey:new PublicKey(input.joiner),isSigner:false,isWritable:true}]));
+export function refundCoinflipTimeoutTransaction(input: { programId: string; gameId: bigint; creator: string; joiner: string; randomnessAccount: string }) {
+  const program = new PublicKey(input.programId), randomness = new PublicKey(input.randomnessAccount), addresses = fateAddresses(program), game = addresses.coinflip(input.gameId), receipt = addresses.randomnessReceipt(randomness), joiner = new PublicKey(input.joiner);
+  return new Transaction().add(ix(program,[Uint8Array.from(DISCRIMINATORS.refundCoinflipTimeout)],[{pubkey:game.game,isSigner:false,isWritable:true},{pubkey:game.vault,isSigner:false,isWritable:true},{pubkey:new PublicKey(input.creator),isSigner:false,isWritable:true},{pubkey:joiner,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:true},{pubkey:joiner,isSigner:false,isWritable:true}]));
 }
 
 export function openDailyCaseTransaction(input: { programId: string; player: string; randomnessAccount: string; initializePlayer?: boolean }) {
@@ -66,12 +66,12 @@ export function openDailyCaseTransaction(input: { programId: string; player: str
 
 export function settleDailyCaseTransaction(input: { programId: string; player: string; randomnessAccount: string }) {
   const program = new PublicKey(input.programId), player = new PublicKey(input.player), randomness = new PublicKey(input.randomnessAccount), addresses = fateAddresses(program), daily = addresses.daily(player), receipt = addresses.randomnessReceipt(randomness);
-  return new Transaction().add(ix(program, [Uint8Array.from(DISCRIMINATORS.settleDailyCase)], [{pubkey:addresses.config,isSigner:false,isWritable:false},{pubkey:daily,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:false},{pubkey:player,isSigner:false,isWritable:true},{pubkey:addresses.dailyVault,isSigner:false,isWritable:true}]));
+  return new Transaction().add(ix(program, [Uint8Array.from(DISCRIMINATORS.settleDailyCase)], [{pubkey:addresses.config,isSigner:false,isWritable:false},{pubkey:daily,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:true},{pubkey:player,isSigner:false,isWritable:true},{pubkey:addresses.dailyVault,isSigner:false,isWritable:true},{pubkey:player,isSigner:false,isWritable:true}]));
 }
 
-export function cancelDailyTimeoutTransaction(input: { programId: string; player: string }) {
-  const program = new PublicKey(input.programId), player = new PublicKey(input.player), daily = fateAddresses(program).daily(player);
-  return new Transaction().add(ix(program, [Uint8Array.from(DISCRIMINATORS.cancelDailyTimeout)], [{pubkey:player,isSigner:true,isWritable:false},{pubkey:daily,isSigner:false,isWritable:true}]));
+export function cancelDailyTimeoutTransaction(input: { programId: string; player: string; randomnessAccount: string }) {
+  const program = new PublicKey(input.programId), player = new PublicKey(input.player), randomness = new PublicKey(input.randomnessAccount), addresses = fateAddresses(program), daily = addresses.daily(player), receipt = addresses.randomnessReceipt(randomness);
+  return new Transaction().add(ix(program, [Uint8Array.from(DISCRIMINATORS.cancelDailyTimeout)], [{pubkey:player,isSigner:true,isWritable:true},{pubkey:daily,isSigner:false,isWritable:true},{pubkey:randomness,isSigner:false,isWritable:false},{pubkey:receipt,isSigner:false,isWritable:true},{pubkey:player,isSigner:false,isWritable:true}]));
 }
 
 export function decodeDailyPlayerAccount(bytes: Uint8Array): DailyPlayerAccount {

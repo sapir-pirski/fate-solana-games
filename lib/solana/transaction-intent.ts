@@ -66,6 +66,11 @@ function expectSigner(instruction: TransactionInstruction, index: number, wallet
   if (!key || !key.isSigner || !same(key.pubkey, wallet)) fail("INVALID_TRANSACTION_SIGNER", "The authenticated wallet is not the required game signer.");
 }
 
+function expectWritable(instruction: TransactionInstruction, index: number, label: string) {
+  const key = instruction.keys[index];
+  if (!key?.isWritable) fail("INVALID_TRANSACTION_ACCOUNTS", `${label} must be writable.`);
+}
+
 function exactInstruction(instruction: TransactionInstruction, program: PublicKey, keyCount: number, dataLength: number) {
   if (!same(instruction.programId, program)) fail("INVALID_TRANSACTION_PROGRAM", "The transaction contains an instruction for an unapproved program.");
   if (instruction.keys.length !== keyCount || instruction.data.length !== dataLength) fail("INVALID_TRANSACTION_LAYOUT", "The game instruction layout is not recognized.");
@@ -128,13 +133,15 @@ function verifyAccounts(instruction: TransactionInstruction, action: GameAction,
       break;
     }
     case "settle_coinflip": {
-      exactInstruction(instruction, program, 7, 8);
+      exactInstruction(instruction, program, 8, 8);
       expectKey(instruction, 0, config, "Configuration");
       gameAddress = instruction.keys[1].pubkey;
       const vault = PublicKey.findProgramAddressSync([COINFLIP_VAULT_SEED, gameAddress.toBuffer()], program)[0];
       expectKey(instruction, 2, vault, "Coinflip vault");
       const receipt = PublicKey.findProgramAddressSync([RANDOMNESS_RECEIPT_SEED, instruction.keys[3].pubkey.toBuffer()], program)[0];
       expectKey(instruction, 4, receipt, "Randomness receipt");
+      expectWritable(instruction, 4, "Randomness receipt");
+      expectWritable(instruction, 7, "Receipt rent payer");
       break;
     }
     case "cancel_coinflip": {
@@ -146,10 +153,15 @@ function verifyAccounts(instruction: TransactionInstruction, action: GameAction,
       break;
     }
     case "refund_coinflip_timeout": {
-      exactInstruction(instruction, program, 4, 8);
+      exactInstruction(instruction, program, 7, 8);
       gameAddress = instruction.keys[0].pubkey;
       const vault = PublicKey.findProgramAddressSync([COINFLIP_VAULT_SEED, gameAddress.toBuffer()], program)[0];
       expectKey(instruction, 1, vault, "Coinflip vault");
+      const receipt = PublicKey.findProgramAddressSync([RANDOMNESS_RECEIPT_SEED, instruction.keys[4].pubkey.toBuffer()], program)[0];
+      expectKey(instruction, 5, receipt, "Randomness receipt");
+      expectWritable(instruction, 5, "Randomness receipt");
+      expectKey(instruction, 6, instruction.keys[3].pubkey, "Receipt rent payer");
+      expectWritable(instruction, 6, "Receipt rent payer");
       break;
     }
     case "open_daily": {
@@ -164,20 +176,28 @@ function verifyAccounts(instruction: TransactionInstruction, action: GameAction,
       break;
     }
     case "settle_daily": {
-      exactInstruction(instruction, program, 6, 8);
+      exactInstruction(instruction, program, 7, 8);
       expectKey(instruction, 0, config, "Configuration");
       gameAddress = PublicKey.findProgramAddressSync([DAILY_SEED, instruction.keys[4].pubkey.toBuffer()], program)[0];
       expectKey(instruction, 1, gameAddress, "Daily player");
       const receipt = PublicKey.findProgramAddressSync([RANDOMNESS_RECEIPT_SEED, instruction.keys[2].pubkey.toBuffer()], program)[0];
       expectKey(instruction, 3, receipt, "Randomness receipt");
+      expectWritable(instruction, 3, "Randomness receipt");
       expectKey(instruction, 5, dailyVault, "Daily vault");
+      expectKey(instruction, 6, instruction.keys[4].pubkey, "Receipt rent payer");
+      expectWritable(instruction, 6, "Receipt rent payer");
       break;
     }
     case "cancel_daily_timeout": {
-      exactInstruction(instruction, program, 2, 8);
+      exactInstruction(instruction, program, 5, 8);
       expectSigner(instruction, 0, wallet);
       gameAddress = PublicKey.findProgramAddressSync([DAILY_SEED, wallet.toBuffer()], program)[0];
       expectKey(instruction, 1, gameAddress, "Daily player");
+      const receipt = PublicKey.findProgramAddressSync([RANDOMNESS_RECEIPT_SEED, instruction.keys[2].pubkey.toBuffer()], program)[0];
+      expectKey(instruction, 3, receipt, "Randomness receipt");
+      expectWritable(instruction, 3, "Randomness receipt");
+      expectKey(instruction, 4, wallet, "Receipt rent payer");
+      expectWritable(instruction, 4, "Receipt rent payer");
       break;
     }
   }

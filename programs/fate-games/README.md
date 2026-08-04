@@ -51,8 +51,10 @@ pause, treasury, and deployment identities. See `docs/MULTISIG_RUNBOOK.md`.
 Randomness uses Switchboard On-Demand's Solana commit/reveal accounts. The
 configured provider program and queue are timelocked. Every game binds one
 provider-owned randomness account before reveal and records its seed slot. A
-permanent `RandomnessReceipt` PDA makes that commitment account single-use across
-all FATE games.
+`RandomnessReceipt` PDA prevents the commitment from being reused while the game
+is pending and records the account that funded its rent. Settlement closes the
+receipt after reveal; timeout recovery closes it only after the committed seed is
+stale. In both cases Anchor returns all receipt rent to that original payer.
 
 At commitment, the program verifies the provider owner, account discriminator,
 configured queue, an unrevealed value, and the strict `seed_slot == clock.slot - 1`
@@ -66,6 +68,10 @@ Provider liveness is not assumed: the existing ten-minute timeout paths return
 paid wagers or clear a free Daily Case request. Before mainnet, pin the audited
 provider deployment and queue for that cluster, run validator-level adversarial
 transaction tests, and obtain an independent program audit.
+
+This receipt layout adds the original rent payer to program state. Existing
+pre-change devnet receipts are not layout-compatible and require a clean devnet
+program/account redeployment before this build is used.
 
 The `/verify` browser page reads both accounts directly from the configured Solana
 RPC, checks provider ownership and queue binding, compares slots and random bytes,

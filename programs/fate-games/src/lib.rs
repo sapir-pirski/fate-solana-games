@@ -359,6 +359,7 @@ pub mod fate_games {
             &mut ctx.accounts.randomness_receipt,
             game_key,
             GameType::Jackpot,
+            ctx.accounts.payer.key(),
             clock.slot,
             ctx.bumps.randomness_receipt,
         )?;
@@ -435,6 +436,12 @@ pub mod fate_games {
             seed_slot: round.randomness_seed_slot,
             reveal_slot,
         });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: round.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
+        });
         Ok(())
     }
 
@@ -451,6 +458,12 @@ pub mod fate_games {
         );
         round.state = GameState::Refunded;
         emit!(JackpotRefundsEnabled { game: round.key() });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: round.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
+        });
         Ok(())
     }
 
@@ -569,6 +582,7 @@ pub mod fate_games {
             &mut ctx.accounts.randomness_receipt,
             game_key,
             GameType::Coinflip,
+            ctx.accounts.joiner.key(),
             Clock::get()?.slot,
             ctx.bumps.randomness_receipt,
         )?;
@@ -673,6 +687,12 @@ pub mod fate_games {
             seed_slot: game.randomness_seed_slot,
             reveal_slot,
         });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: game.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
+        });
         Ok(())
     }
 
@@ -732,6 +752,12 @@ pub mod fate_games {
             player: game.joiner,
             amount: game.amount
         });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: game.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
+        });
         Ok(())
     }
 
@@ -777,6 +803,7 @@ pub mod fate_games {
             &mut ctx.accounts.randomness_receipt,
             game_key,
             GameType::DailyCase,
+            ctx.accounts.player.key(),
             Clock::get()?.slot,
             ctx.bumps.randomness_receipt,
         )?;
@@ -848,6 +875,12 @@ pub mod fate_games {
             seed_slot: daily.randomness_seed_slot,
             reveal_slot,
         });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: daily.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
+        });
         Ok(())
     }
 
@@ -872,6 +905,12 @@ pub mod fate_games {
         emit!(DailyCaseTimedOut {
             account: daily.key(),
             player: daily.player,
+        });
+        emit!(RandomnessReceiptClosed {
+            receipt: ctx.accounts.randomness_receipt.key(),
+            game: daily.key(),
+            randomness_account: ctx.accounts.randomness_receipt.randomness_account,
+            rent_recipient: ctx.accounts.rent_payer.key(),
         });
         Ok(())
     }
@@ -958,6 +997,7 @@ fn bind_randomness(
     receipt: &mut Account<RandomnessReceipt>,
     game: Pubkey,
     game_type: GameType,
+    rent_payer: Pubkey,
     clock_slot: u64,
     bump: u8,
 ) -> Result<u64> {
@@ -978,6 +1018,7 @@ fn bind_randomness(
     receipt.randomness_account = account.key();
     receipt.game = game;
     receipt.game_type = game_type;
+    receipt.rent_payer = rent_payer;
     receipt.seed_slot = data.seed_slot;
     receipt.bump = bump;
     Ok(data.seed_slot)
@@ -1155,7 +1196,7 @@ pub struct SettleJackpot<'info> {
     pub vault: Account<'info, JackpotVault>,
     /// CHECK: Switchboard account is fully verified by the settlement handler.
     pub randomness_account: UncheckedAccount<'info>,
-    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == round.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == round.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Jackpot @ FateError::WrongRandomnessAccount)]
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == round.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == round.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Jackpot @ FateError::WrongRandomnessAccount, close = rent_payer)]
     pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Validated against the deterministic selected winner.
     #[account(mut)]
@@ -1163,12 +1204,23 @@ pub struct SettleJackpot<'info> {
     /// CHECK: Validated against configuration.
     #[account(mut)]
     pub treasury: UncheckedAccount<'info>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded at request time.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct EnableJackpotRefunds<'info> {
     #[account(mut, seeds = [JACKPOT_SEED, &round.id.to_le_bytes()], bump = round.bump)]
     pub round: Account<'info, JackpotRound>,
+    /// CHECK: Address is constrained to the randomness account bound to this round.
+    #[account(address = round.randomness_account)]
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == round.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == round.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Jackpot @ FateError::WrongRandomnessAccount, close = rent_payer)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded at request time.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -1233,7 +1285,7 @@ pub struct SettleCoinflip<'info> {
     pub vault: Account<'info, CoinflipVault>,
     /// CHECK: Switchboard account is fully verified by the settlement handler.
     pub randomness_account: UncheckedAccount<'info>,
-    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == game.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == game.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Coinflip @ FateError::WrongRandomnessAccount)]
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == game.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == game.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Coinflip @ FateError::WrongRandomnessAccount, close = rent_payer)]
     pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Validated against the deterministic winner.
     #[account(mut)]
@@ -1241,6 +1293,9 @@ pub struct SettleCoinflip<'info> {
     /// CHECK: Validated against configuration.
     #[account(mut)]
     pub treasury: UncheckedAccount<'info>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded at join time.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -1265,6 +1320,14 @@ pub struct RefundCoinflipTimeout<'info> {
     /// CHECK: Address constrained to joiner.
     #[account(mut, address = game.joiner)]
     pub joiner: UncheckedAccount<'info>,
+    /// CHECK: Address is constrained to the randomness account bound to this game.
+    #[account(address = game.randomness_account)]
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == game.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == game.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::Coinflip @ FateError::WrongRandomnessAccount, close = rent_payer)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded at join time.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -1310,20 +1373,32 @@ pub struct SettleDailyCase<'info> {
     pub daily: Account<'info, DailyPlayer>,
     /// CHECK: Switchboard account is fully verified by the settlement handler.
     pub randomness_account: UncheckedAccount<'info>,
-    #[account(seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == daily.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == daily.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::DailyCase @ FateError::WrongRandomnessAccount)]
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == daily.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == daily.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::DailyCase @ FateError::WrongRandomnessAccount, close = rent_payer)]
     pub randomness_receipt: Account<'info, RandomnessReceipt>,
     /// CHECK: Address constrained through daily.player.
     #[account(mut, address = daily.player)]
     pub player: UncheckedAccount<'info>,
     #[account(mut, seeds = [DAILY_VAULT_SEED], bump = vault.bump)]
     pub vault: Account<'info, DailyVault>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded when the case opened.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct CancelDailyTimeout<'info> {
+    #[account(mut)]
     pub player: Signer<'info>,
     #[account(mut, seeds = [DAILY_SEED, player.key().as_ref()], bump = daily.bump, has_one = player)]
     pub daily: Account<'info, DailyPlayer>,
+    /// CHECK: Address is constrained to the randomness account bound to this Daily Case.
+    #[account(address = daily.randomness_account)]
+    pub randomness_account: UncheckedAccount<'info>,
+    #[account(mut, seeds = [RANDOMNESS_RECEIPT_SEED, randomness_account.key().as_ref()], bump = randomness_receipt.bump, has_one = randomness_account, constraint = randomness_receipt.game == daily.key() @ FateError::WrongRandomnessAccount, constraint = randomness_receipt.seed_slot == daily.randomness_seed_slot @ FateError::RandomnessSeedMismatch, constraint = randomness_receipt.game_type == GameType::DailyCase @ FateError::WrongRandomnessAccount, close = rent_payer)]
+    pub randomness_receipt: Account<'info, RandomnessReceipt>,
+    /// CHECK: Receives only receipt rent and must equal the payer recorded when the case opened.
+    #[account(mut, address = randomness_receipt.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -1489,11 +1564,12 @@ pub struct RandomnessReceipt {
     pub randomness_account: Pubkey,
     pub game: Pubkey,
     pub game_type: GameType,
+    pub rent_payer: Pubkey,
     pub seed_slot: u64,
     pub bump: u8,
 }
 impl RandomnessReceipt {
-    pub const SPACE: usize = 8 + 32 + 32 + 1 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 1 + 32 + 8 + 1;
 }
 
 #[account]
@@ -1613,6 +1689,13 @@ pub struct RandomnessRequested {
     pub game_type: GameType,
     pub randomness_account: Pubkey,
     pub seed_slot: u64,
+}
+#[event]
+pub struct RandomnessReceiptClosed {
+    pub receipt: Pubkey,
+    pub game: Pubkey,
+    pub randomness_account: Pubkey,
+    pub rent_recipient: Pubkey,
 }
 #[event]
 pub struct GameSettled {
