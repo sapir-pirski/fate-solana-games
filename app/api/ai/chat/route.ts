@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte } from "drizzle-orm";
 import { ensureAiSchema, getDb, withDatabase } from "../../../../db";
 import { aiConversations, aiMessages, aiToolCalls, aiUsage } from "../../../../db/schema";
 import { FATE_AI_SYSTEM_PROMPT, BASE58, redactError, safeModel, validatePrompt, walletHash } from "../../../../lib/ai/policy";
@@ -10,6 +10,7 @@ import { increment, jsonLog, observe, withSpan } from "../../../../lib/telemetry
 
 const MAX_MESSAGE = 2_000;
 const MAX_TOOL_ROUNDS = 3;
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function streamAnswer(answer: string, metadata: Record<string, unknown>) {
   const encoder = new TextEncoder();
   return new Response(new ReadableStream({ start(controller) {
@@ -50,10 +51,40 @@ async function handlePost(request: Request) {
     const inputUsdPerMillion = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25); const outputUsdPerMillion = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
     const estimatedMonthlyUsd = recentUsage.reduce((sum, item) => sum + item.inputTokens * inputUsdPerMillion / 1_000_000 + item.outputTokens * outputUsdPerMillion / 1_000_000, 0);
     if (estimatedMonthlyUsd >= Math.max(0, Number(process.env.AI_MONTHLY_BUDGET_USD ?? 25))) return Response.json({ code: "AI_SERVICE_BUDGET_EXCEEDED", message: "Copilot has reached its monthly service budget.", requestId }, { status: 503, headers: { "retry-after": "3600" } });
-    const conversationId = typeof body.conversationId === "string" && /^[0-9a-f-]{36}$/i.test(body.conversationId) ? body.conversationId : crypto.randomUUID();
-    await getDb().insert(aiConversations).values({ id: conversationId, walletAddress }).onConflictDoNothing({ target: aiConversations.id });
+    const requestedConversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+    if (requestedConversationId && !CONVERSATION_ID.test(requestedConversationId)) {
+      return Response.json({ code: "INVALID_CONVERSATION", requestId }, { status: 400 });
+    }
+    const ownerWallet = session?.walletAddress ?? null;
+    let conversationId: string;
+    if (requestedConversationId) {
+      if (!ownerWallet) {
+        return Response.json({ code: "CONVERSATION_AUTH_REQUIRED", message: "Authenticate a wallet to resume a saved conversation.", requestId }, { status: 401 });
+      }
+      const [ownedConversation] = await getDb().select({ id: aiConversations.id }).from(aiConversations).where(and(
+        eq(aiConversations.id, requestedConversationId),
+        eq(aiConversations.walletAddress, ownerWallet),
+        eq(aiConversations.status, "active"),
+      )).limit(1);
+      if (!ownedConversation) {
+        return Response.json({ code: "CONVERSATION_NOT_FOUND", requestId }, { status: 404 });
+      }
+      conversationId = ownedConversation.id;
+      await getDb().update(aiConversations).set({ updatedAt: new Date().toISOString() }).where(and(
+        eq(aiConversations.id, conversationId),
+        eq(aiConversations.walletAddress, ownerWallet),
+      ));
+    } else {
+      conversationId = crypto.randomUUID();
+      await getDb().insert(aiConversations).values({ id: conversationId, walletAddress: ownerWallet });
+    }
     await getDb().insert(aiMessages).values({ id: crypto.randomUUID(), conversationId, role: "user", content: message });
-    const history = await getDb().select().from(aiMessages).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12);
+    const history = ownerWallet
+      ? await getDb().select({ role: aiMessages.role, content: aiMessages.content }).from(aiMessages).innerJoin(aiConversations, and(
+          eq(aiMessages.conversationId, aiConversations.id),
+          eq(aiConversations.walletAddress, ownerWallet),
+        )).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12)
+      : await getDb().select({ role: aiMessages.role, content: aiMessages.content }).from(aiMessages).where(eq(aiMessages.conversationId, conversationId)).orderBy(asc(aiMessages.createdAt)).limit(12);
     const client = new OpenAI({ apiKey, maxRetries: 2, timeout: Math.max(5_000, Math.min(60_000, Number(process.env.AI_PROVIDER_TIMEOUT_MS ?? 30_000))) }); const model = safeModel(process.env.OPENAI_MODEL);
     let responseInput: unknown[] = history.map(item => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content }));
     const providerStarted = Date.now();
@@ -82,7 +113,7 @@ async function handlePost(request: Request) {
     await getDb().insert(aiUsage).values({ id: crypto.randomUUID(), conversationId, walletHash: rateKey, model, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0, reasoningTokens: usage?.output_tokens_details?.reasoning_tokens ?? 0, cachedTokens: usage?.input_tokens_details?.cached_tokens ?? 0 });
     increment("fate_ai_requests_total", { status: "success", model }); observe("fate_ai_provider_duration_ms", Date.now() - providerStarted, { model });
     jsonLog("info", "ai_chat_complete", "AI response completed", { component: "ai", requestId, model, toolRounds, inputTokens: usage?.input_tokens ?? 0, outputTokens: usage?.output_tokens ?? 0 });
-    return streamAnswer(answer, { requestId, conversationId, messageId: assistantId, model, toolRounds });
+    return streamAnswer(answer, { requestId, conversationId: ownerWallet ? conversationId : null, messageId: assistantId, model, toolRounds });
   } catch (error) {
     increment("fate_ai_requests_total", { status: "failure" }); jsonLog("error", "ai_chat_failed", "AI response failed", { component: "ai", requestId, errorCode: redactError(error) });
     return Response.json({ code: "AI_UNAVAILABLE", requestId }, { status: 503, headers: { "retry-after": "5" } });

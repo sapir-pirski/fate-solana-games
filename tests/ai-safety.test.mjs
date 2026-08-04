@@ -21,6 +21,18 @@ test("Responses calls are stateless and tool rounds are bounded", async () => {
   assert.match(route, /AI_MAX_TOKENS_PER_WALLET_DAY/);
 });
 
+test("saved AI conversations are scoped to the authenticated wallet", async () => {
+  const route = await read("app/api/ai/chat/route.ts");
+  assert.match(route, /CONVERSATION_AUTH_REQUIRED/);
+  assert.match(route, /CONVERSATION_NOT_FOUND/);
+  assert.match(route, /eq\(aiConversations\.id, requestedConversationId\)/);
+  assert.match(route, /eq\(aiConversations\.walletAddress, ownerWallet\)/);
+  assert.match(route, /eq\(aiConversations\.status, "active"\)/);
+  assert.match(route, /innerJoin\(aiConversations/);
+  assert.match(route, /walletAddress: ownerWallet/);
+  assert.doesNotMatch(route, /values\(\{ id: conversationId, walletAddress \}\)\.onConflictDoNothing/);
+});
+
 test("unfinished Arena is not exposed in the production Copilot UI", async () => {
   const component = await read("app/ai/FateCopilot.tsx");
   assert.doesNotMatch(component, /runArena|Devnet Agent Arena|\"arena\"/);

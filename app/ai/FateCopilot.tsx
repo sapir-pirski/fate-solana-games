@@ -9,7 +9,7 @@ type Tab = "copilot" | "limits";
 const WELCOME: Message = { id: "welcome", role: "assistant", content: "I can explain game rules, inspect indexed fairness evidence, diagnose tracked transactions, summarize activity, and prepare unsigned devnet drafts." };
 
 function errorMessage(code?: string, fallback?: string) {
-  const messages: Record<string, string> = { AI_NOT_CONFIGURED: "Copilot is not configured.", AI_RATE_LIMITED: "Too many requests. Please try again later.", RATE_LIMITED: "Too many requests. Please try again later.", AI_TOKEN_BUDGET_EXCEEDED: "Your daily Copilot allowance has been reached.", AI_SERVICE_BUDGET_EXCEEDED: "Copilot has reached its service budget.", WALLET_AUTH_REQUIRED: "Authenticate your connected wallet to access wallet-specific information.", SENSITIVE_INPUT: "Remove secrets or private information and try again.", UNSAFE_INSTRUCTION: "That instruction cannot be processed safely.", AI_UNAVAILABLE: "Copilot is temporarily unavailable. Please retry." };
+  const messages: Record<string, string> = { AI_NOT_CONFIGURED: "Copilot is not configured.", AI_RATE_LIMITED: "Too many requests. Please try again later.", RATE_LIMITED: "Too many requests. Please try again later.", AI_TOKEN_BUDGET_EXCEEDED: "Your daily Copilot allowance has been reached.", AI_SERVICE_BUDGET_EXCEEDED: "Copilot has reached its service budget.", WALLET_AUTH_REQUIRED: "Authenticate your connected wallet to access wallet-specific information.", CONVERSATION_AUTH_REQUIRED: "Authenticate your wallet to resume this conversation.", CONVERSATION_NOT_FOUND: "This conversation is unavailable. Start a new conversation.", INVALID_CONVERSATION: "The conversation identifier is invalid. Start a new conversation.", SENSITIVE_INPUT: "Remove secrets or private information and try again.", UNSAFE_INSTRUCTION: "That instruction cannot be processed safely.", AI_UNAVAILABLE: "Copilot is temporarily unavailable. Please retry." };
   return (code && messages[code]) ?? fallback ?? "Copilot unavailable";
 }
 
@@ -24,6 +24,7 @@ export default function FateCopilot({ walletAddress }: { walletAddress: string |
   const closeCopilot = useCallback(() => { clearConversation(); setOpen(false); window.setTimeout(() => launcherRef.current?.focus(), 0); }, [clearConversation]);
 
   useEffect(() => { sessionStorage.removeItem("fate.ai.conversation"); sessionStorage.removeItem("fate.ai.messages"); void fetch("/api/ai/status").then(response => response.json()).then(value => setAvailable(Boolean((value as { enabled?: boolean }).enabled))).catch(() => setAvailable(false)); return () => abortRef.current?.abort(); }, []);
+  useEffect(() => { clearConversation(); }, [clearConversation, walletAddress]);
   useEffect(() => { if (!open) return; const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); closeCopilot(); } }; document.addEventListener("keydown", onKeyDown); return () => document.removeEventListener("keydown", onKeyDown); }, [closeCopilot, open]);
 
   async function send(message = input, fresh = false) {
