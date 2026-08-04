@@ -1,11 +1,11 @@
 export const GAME_ACTIONS = {
   jackpot: new Set(["enter_jackpot"]),
-  coinflip: new Set(["create_coinflip", "join_coinflip"]),
+  coinflip: new Set(["create_coinflip", "join_coinflip", "settle_coinflip", "cancel_coinflip", "refund_coinflip_timeout"]),
   daily: new Set(["open_daily", "settle_daily", "cancel_daily_timeout"]),
 } as const;
 
 export type GameType = keyof typeof GAME_ACTIONS;
-export type GameAction = "enter_jackpot" | "create_coinflip" | "join_coinflip" | "open_daily" | "settle_daily" | "cancel_daily_timeout";
+export type GameAction = "enter_jackpot" | "create_coinflip" | "join_coinflip" | "settle_coinflip" | "cancel_coinflip" | "refund_coinflip_timeout" | "open_daily" | "settle_daily" | "cancel_daily_timeout";
 
 export function serializeLamports(value: bigint) {
   if (value < 0n) throw new Error("Lamports cannot be negative.");

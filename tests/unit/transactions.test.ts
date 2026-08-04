@@ -18,6 +18,10 @@ test("lamport parsing rejects malformed and unsafe values", () => {
 test("game actions must match their game type", () => {
   assert.equal(isValidGameAction("jackpot", "enter_jackpot"), true);
   assert.equal(isValidGameAction("coinflip", "create_coinflip"), true);
+  assert.equal(isValidGameAction("coinflip", "join_coinflip"), true);
+  assert.equal(isValidGameAction("coinflip", "settle_coinflip"), true);
+  assert.equal(isValidGameAction("coinflip", "cancel_coinflip"), true);
+  assert.equal(isValidGameAction("coinflip", "refund_coinflip_timeout"), true);
   assert.equal(isValidGameAction("daily", "open_daily"), true);
   assert.equal(isValidGameAction("daily", "settle_daily"), true);
   assert.equal(isValidGameAction("daily", "cancel_daily_timeout"), true);

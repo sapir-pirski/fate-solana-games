@@ -23,6 +23,8 @@ npm run dev
 
 Open `http://localhost:3000`. Install a Wallet Standard-compatible Solana wallet and switch it to devnet to connect. A missing wallet produces an explicit error instead of a simulated connection.
 
+Coinflip creation, join, permissionless settlement, creator cancellation, and timeout refunds are wired to the Anchor program. Joining requires `NEXT_PUBLIC_COINFLIP_RANDOMNESS_ENDPOINT` to return a fresh committed Switchboard account as `{ "randomnessAccount": "..." }`; the static account setting is only a one-use local/devnet acceptance fixture. Settlement reads the revealed bytes and treasury directly from Solana before constructing the transaction.
+
 ## Validate
 
 ```bash

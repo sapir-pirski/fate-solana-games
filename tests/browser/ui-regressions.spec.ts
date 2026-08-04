@@ -44,7 +44,7 @@ test("wallet actions remain active and labels do not overlap", async ({ page }) 
 
 test("coinflip empty state is readable and points to creation", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.route("**/api/indexer/games?type=coinflip&state=open", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
+  await page.route("**/api/indexer/games?type=coinflip", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
   await page.route("**/api/indexer/games?type=coinflip&state=settled", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"games":[]}' }));
   await page.goto("/coinflip");
   await expect(page.getByText("NO OPEN FLIPS", { exact: true })).toBeVisible();
