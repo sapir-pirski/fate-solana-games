@@ -7,20 +7,29 @@ const sourceConfig = new URL("../dist/server/wrangler.json", import.meta.url);
 const runtimeConfig = new URL("../dist/server/.wrangler.runtime.json", import.meta.url).pathname;
 const allowedVariables = [
   "APP_REVISION",
+  "AUTOMATION_TOKEN",
+  "RESTORE_MAX_BYTES",
+  "RESTORE_MAX_ROWS",
   "AI_MAX_REQUESTS_PER_WALLET_DAY",
   "AI_MAX_TOKENS_PER_WALLET_DAY",
   "AI_PROVIDER_TIMEOUT_MS",
   "AI_MONTHLY_BUDGET_USD",
   "AI_INPUT_USD_PER_MILLION_TOKENS",
+  "AI_CACHED_INPUT_USD_PER_MILLION_TOKENS",
   "AI_OUTPUT_USD_PER_MILLION_TOKENS",
+  "COMPLIANCE_ALLOWED_COUNTRIES",
+  "COMPLIANCE_BLOCKED_COUNTRIES",
+  "FATE_PROGRAM_ID",
   "INDEXER_AUTH_TOKEN",
   "NEXT_PUBLIC_FATE_PROGRAM_ID",
   "NEXT_PUBLIC_SOLANA_CLUSTER",
   "NEXT_PUBLIC_SOLANA_RPC_URL",
+  "NEXT_PUBLIC_SOLANA_RPC_URLS",
   "OPENAI_API_KEY",
   "OPENAI_MODEL",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_SERVICE_NAME",
+  "SOLANA_RPC_URL",
 ];
 
 const config = JSON.parse(await readFile(sourceConfig, "utf8"));

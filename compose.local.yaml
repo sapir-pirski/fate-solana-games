@@ -16,6 +16,10 @@ services:
       PORT: "3000"
       WRANGLER_LOG_LEVEL: warn
       INDEXER_AUTH_TOKEN: ${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}
+      # Local fallback keeps existing installations working; production uses a distinct secret.
+      AUTOMATION_TOKEN: ${AUTOMATION_TOKEN:-${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}}
+      RESTORE_MAX_BYTES: ${RESTORE_MAX_BYTES:-10485760}
+      RESTORE_MAX_ROWS: ${RESTORE_MAX_ROWS:-10000}
       NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
       NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
       NEXT_PUBLIC_FATE_PROGRAM_ID: ${NEXT_PUBLIC_FATE_PROGRAM_ID:?Set NEXT_PUBLIC_FATE_PROGRAM_ID in local.env}

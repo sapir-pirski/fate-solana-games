@@ -187,6 +187,16 @@ export async function ensureComplianceSchema() {
   await complianceSchemaReady;
 }
 
+export async function ensureApplicationSchema() {
+  await Promise.all([
+    ensureEventLogSchema(),
+    ensureGameSchema(),
+    ensureAiSchema(),
+    ensureAuthSchema(),
+    ensureComplianceSchema(),
+  ]);
+}
+
 export async function checkDatabaseHealth() {
   if (!env.DB) return { backend: "d1", status: "unavailable" } as const;
   await env.DB.prepare("SELECT 1").first();

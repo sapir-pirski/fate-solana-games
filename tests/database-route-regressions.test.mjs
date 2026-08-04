@@ -32,3 +32,23 @@ test("the finalized Solana index has a writer and an authenticated scheduler rou
   assert.match(route, /authorizeAutomation/);
   assert.match(route, /syncSolanaIndexer/);
 });
+
+test("database backup and restore share a complete manifest and require guarded replacement", () => {
+  const manifest = read("lib/database-backup.ts");
+  const backup = read("app/api/internal/backup/route.ts");
+  const restore = read("app/api/internal/restore/route.ts");
+  for (const table of ["chain_events", "games", "game_entries", "indexer_checkpoints", "wallet_auth_challenges", "rate_limit_buckets", "agent_runs", "agent_alerts"]) {
+    assert.match(manifest, new RegExp(`"${table}"`));
+  }
+  assert.match(backup, /createDatabaseBackup/);
+  assert.match(restore, /validateDatabaseBackup/);
+  assert.match(restore, /dryRun/);
+  assert.match(restore, /get\("mode"\) !== "replace"/);
+  assert.match(restore, /x-fate-restore-confirm/);
+  assert.match(restore, /buildAtomicRestorePlan/);
+  assert.match(restore, /RESTORE_STAGE_COUNT_MISMATCH/);
+  assert.match(restore, /env\.DB\.batch/);
+  assert.match(restore, /authorizeAutomation/);
+  assert.match(read("lib/internal-api.ts"), /runtimeEnv\("AUTOMATION_TOKEN"\)/);
+  assert.match(read("scripts/start-container.mjs"), /"AUTOMATION_TOKEN"/);
+});

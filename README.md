@@ -95,6 +95,22 @@ maintenance, and a daily JSON backup retained as a private workflow artifact.
 Configure the same random `AUTOMATION_TOKEN` in the
 hosting environment and the `FATE_AUTOMATION_TOKEN` GitHub repository secret.
 
+Backups use the versioned `fate-d1-json-v2` format and cover every
+application-owned table. Each export contains its schema manifest, applied
+migrations, row counts, and a SHA-256 checksum. To validate a backup without
+changing data, run:
+
+```sh
+BASE_URL=https://fate-solana-games.sapirp.chatgpt.site \
+AUTOMATION_TOKEN=... npm run db:restore -- fate-d1-backup.json
+```
+
+An actual replacement requires the additional `--apply` flag and
+`RESTORE_CONFIRM_CHECKSUM` set to the checksum printed by the successful dry
+run. Data is loaded into isolated staging tables, verified, and then swapped
+into production in one atomic D1 batch. A failed staging operation leaves the
+current production tables unchanged.
+
 Object storage is intentionally not provisioned because FATE has no user-file
 workload. A custom domain can be attached later without changing application
 architecture. The application and recovery workflow are provider-neutral and

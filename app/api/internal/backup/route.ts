@@ -1,35 +1,40 @@
 import { env } from "cloudflare:workers";
 import { authorizeAutomation, unauthorized } from "@/server/services/internal-api";
-
-const TABLES = [
-  "event_logs", "chain_events", "games", "game_entries", "indexer_checkpoints",
-  "wallet_sessions", "transaction_operations", "background_jobs",
-  "ai_conversations", "ai_messages", "ai_tool_calls", "ai_usage", "ai_feedback",
-  "responsible_play_limits", "compliance_profiles", "compliance_audit_events", "privacy_requests",
-] as const;
+import { BACKUP_TABLES, BackupValidationError, createDatabaseBackup, type BackupColumns, type BackupRow, type BackupTables } from "@/lib/database-backup";
+import { ensureApplicationSchema } from "@/db";
 
 export async function GET(request: Request) {
   if (!authorizeAutomation(request)) return unauthorized();
   if (!env.DB) return Response.json({ code: "DATABASE_UNAVAILABLE" }, { status: 503 });
 
-  const tables: Record<string, unknown[]> = {};
-  for (const table of TABLES) {
-    try {
-      const result = await env.DB.prepare(`SELECT * FROM ${table}`).all();
+  try {
+    await ensureApplicationSchema();
+    const tables = {} as BackupTables;
+    const columns = {} as BackupColumns;
+    for (const table of BACKUP_TABLES) {
+      const columnResult = await env.DB.prepare(`PRAGMA table_info("${table}")`).all<{ name: string }>();
+      if (!columnResult.results.length) throw new BackupValidationError("BACKUP_SCHEMA_INCOMPLETE", `Required table ${table} is missing.`);
+      columns[table] = columnResult.results.map(column => column.name);
+      const result = await env.DB.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all<BackupRow>();
       tables[table] = result.results;
+    }
+    let appliedMigrations: string[] = [];
+    try {
+      const migrations = await env.DB.prepare("SELECT name FROM d1_migrations ORDER BY id").all<{ name: string }>();
+      appliedMigrations = migrations.results.map(migration => migration.name);
     } catch (error) {
       if (!(error instanceof Error) || !/no such table/i.test(error.message)) throw error;
-      tables[table] = [];
     }
+    const backup = await createDatabaseBackup({ tables, columns, appliedMigrations });
+    return Response.json(backup, {
+      headers: {
+        "cache-control": "no-store",
+        "content-disposition": `attachment; filename="fate-backup-${backup.createdAt.replaceAll(":", "-")}.json"`,
+        "x-fate-backup-checksum": backup.checksum.value,
+      },
+    });
+  } catch (error) {
+    if (error instanceof BackupValidationError) return Response.json({ code: error.code, message: error.message }, { status: 409, headers: { "cache-control": "no-store" } });
+    throw error;
   }
-  return Response.json({
-    format: "fate-d1-json-v1",
-    createdAt: new Date().toISOString(),
-    tables,
-  }, {
-    headers: {
-      "cache-control": "no-store",
-      "content-disposition": `attachment; filename="fate-backup-${new Date().toISOString().slice(0, 10)}.json"`,
-    },
-  });
 }

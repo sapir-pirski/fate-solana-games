@@ -1,7 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
+import { env } from "cloudflare:workers";
+
+export function runtimeEnv(name: string) {
+  const runtime = env as unknown as Record<string, unknown>;
+  const value = runtime[name];
+  return typeof value === "string" ? value : process.env[name];
+}
 
 export function authorizeAutomation(request: Request) {
-  const configured = process.env.AUTOMATION_TOKEN?.trim();
+  const configured = runtimeEnv("AUTOMATION_TOKEN")?.trim();
   const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   if (!configured || !supplied) return false;
   const left = Buffer.from(configured);
