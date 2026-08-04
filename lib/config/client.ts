@@ -2,6 +2,8 @@ const publicConfig = {
   solanaCluster: process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet",
   solanaRpcUrl: process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.devnet.solana.com",
   fateProgramId: process.env.NEXT_PUBLIC_FATE_PROGRAM_ID?.trim() || null,
+  dailyRandomnessEndpoint: process.env.NEXT_PUBLIC_DAILY_RANDOMNESS_ENDPOINT?.trim() || null,
+  dailyRandomnessAccount: process.env.NEXT_PUBLIC_DAILY_RANDOMNESS_ACCOUNT?.trim() || null,
 } as const;
 
 export function getPublicConfig() {
