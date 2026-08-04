@@ -22,18 +22,34 @@ let eventLogSchemaReady: Promise<unknown> | null = null;
 let gameSchemaReady: Promise<unknown> | null = null;
 export async function ensureGameSchema() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
-  if (!gameSchemaReady) gameSchemaReady = env.DB.batch([
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS chain_events (id TEXT PRIMARY KEY NOT NULL, signature TEXT NOT NULL, instruction_index INTEGER NOT NULL, event_index INTEGER NOT NULL, slot INTEGER NOT NULL, block_time INTEGER, program_id TEXT NOT NULL, event_name TEXT NOT NULL, payload_json TEXT NOT NULL, commitment TEXT NOT NULL DEFAULT 'confirmed', ingested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS chain_events_position_uidx ON chain_events (signature,instruction_index,event_index)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS chain_events_slot_idx ON chain_events (slot)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS games (address TEXT PRIMARY KEY NOT NULL, game_type TEXT NOT NULL, numeric_id TEXT NOT NULL, state TEXT NOT NULL, creator TEXT, winner TEXT, wager_lamports INTEGER NOT NULL DEFAULT 0, pot_lamports INTEGER NOT NULL DEFAULT 0, payout_lamports INTEGER NOT NULL DEFAULT 0, fee_lamports INTEGER NOT NULL DEFAULT 0, randomness_hex TEXT, opened_at INTEGER, expires_at INTEGER, settled_at INTEGER, last_signature TEXT NOT NULL, last_slot INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS games_type_numeric_id_uidx ON games (game_type,numeric_id)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS games_type_state_idx ON games (game_type,state)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS game_entries (id TEXT PRIMARY KEY NOT NULL, game_address TEXT NOT NULL, wallet_address TEXT NOT NULL, role TEXT NOT NULL, amount_lamports INTEGER NOT NULL, signature TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS game_entries_signature_wallet_uidx ON game_entries (signature,wallet_address,role)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_game_idx ON game_entries (game_address,slot)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS indexer_checkpoints (consumer TEXT PRIMARY KEY NOT NULL, last_signature TEXT, last_slot INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'healthy', last_error TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-  ]).catch((error: unknown) => { gameSchemaReady = null; throw error; });
+  if (!gameSchemaReady) gameSchemaReady = (async () => {
+    const existingColumns = await env.DB.prepare("PRAGMA table_info(games)").all<{ name: string }>();
+    if (existingColumns.results.length && !existingColumns.results.some(column => column.name === "chain_address")) {
+      await env.DB.prepare("ALTER TABLE games ADD COLUMN chain_address TEXT NOT NULL DEFAULT ''").run();
+      await env.DB.prepare("UPDATE games SET chain_address=address WHERE chain_address=''").run();
+    }
+    const entryColumns = await env.DB.prepare("PRAGMA table_info(game_entries)").all<{ name: string }>();
+    if (entryColumns.results.length && !entryColumns.results.some(column => column.name === "event_index")) {
+      await env.DB.prepare("ALTER TABLE game_entries ADD COLUMN event_index INTEGER NOT NULL DEFAULT 0").run();
+    }
+    return env.DB.batch([
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS chain_events (id TEXT PRIMARY KEY NOT NULL, signature TEXT NOT NULL, instruction_index INTEGER NOT NULL, event_index INTEGER NOT NULL, slot INTEGER NOT NULL, block_time INTEGER, program_id TEXT NOT NULL, event_name TEXT NOT NULL, payload_json TEXT NOT NULL, commitment TEXT NOT NULL DEFAULT 'confirmed', ingested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS chain_events_position_uidx ON chain_events (signature,instruction_index,event_index)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS chain_events_slot_idx ON chain_events (slot)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS chain_events_name_slot_idx ON chain_events (event_name,slot)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS games (address TEXT PRIMARY KEY NOT NULL, chain_address TEXT NOT NULL, game_type TEXT NOT NULL, numeric_id TEXT NOT NULL, state TEXT NOT NULL, creator TEXT, winner TEXT, wager_lamports INTEGER NOT NULL DEFAULT 0, pot_lamports INTEGER NOT NULL DEFAULT 0, payout_lamports INTEGER NOT NULL DEFAULT 0, fee_lamports INTEGER NOT NULL DEFAULT 0, randomness_hex TEXT, opened_at INTEGER, expires_at INTEGER, settled_at INTEGER, last_signature TEXT NOT NULL, last_slot INTEGER NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS games_type_numeric_id_uidx ON games (game_type,numeric_id)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS games_type_state_idx ON games (game_type,state)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS games_winner_idx ON games (winner)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS games_chain_address_idx ON games (chain_address,last_slot)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS game_entries (id TEXT PRIMARY KEY NOT NULL, game_address TEXT NOT NULL, wallet_address TEXT NOT NULL, role TEXT NOT NULL, amount_lamports INTEGER NOT NULL, signature TEXT NOT NULL, event_index INTEGER NOT NULL DEFAULT 0, slot INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+      env.DB.prepare("DROP INDEX IF EXISTS game_entries_signature_wallet_uidx"),
+      env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS game_entries_event_uidx ON game_entries (signature,event_index,role,wallet_address)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_game_idx ON game_entries (game_address,slot)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS game_entries_wallet_idx ON game_entries (wallet_address,slot)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS indexer_checkpoints (consumer TEXT PRIMARY KEY NOT NULL, last_signature TEXT, last_slot INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'healthy', last_error TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    ]);
+  })().catch((error: unknown) => { gameSchemaReady = null; throw error; });
   await gameSchemaReady;
 }
 

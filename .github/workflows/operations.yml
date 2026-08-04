@@ -33,6 +33,15 @@ jobs:
           --retry 3 --retry-all-errors
           -X POST -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
           "${BASE_URL}/api/internal/maintenance"
+      - name: Synchronize finalized Solana events
+        env:
+          AUTOMATION_TOKEN: ${{ secrets.FATE_AUTOMATION_TOKEN }}
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --retry 3 --retry-all-errors
+          -X POST -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
+          -H "Content-Type: application/json" -d '{"mode":"full"}'
+          "${BASE_URL}/api/internal/indexer"
 
   backup:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 2 * * *'

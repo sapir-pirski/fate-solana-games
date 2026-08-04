@@ -52,6 +52,8 @@ Product events are queued in IndexedDB, flushed asynchronously in bounded batche
 
 Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_intents` supports pending/confirmed/failed recovery; `indexer_checkpoints` records consumer progress and health.
 
+The server-side Solana indexer reads only `finalized` program transactions, decodes Anchor events, and writes the raw event plus its query projections in one D1 batch. Public game reads trigger a bounded live synchronization; `POST /api/internal/indexer` performs authenticated live and historical backfill work for the scheduled operations workflow. Cursor claims prevent overlapping workers, failed runs retain the last durable cursor, and every mutation is idempotent and slot-monotonic so retries and older backfill pages cannot overwrite newer state.
+
 ## AI and agents
 
 The floating FATE Copilot uses the OpenAI Responses API with read-only, allow-listed tools. It can explain rules, summarize indexed wallet activity, verify stored fairness evidence, diagnose transaction signatures, check responsible-play limits, and produce unsigned devnet action drafts. Every conversation, assistant message, tool call, token count, and user rating is stored in a dedicated audit table. Private keys and signing are never available to the model.
@@ -70,7 +72,7 @@ Run `npm run db:generate` after schema changes. Apply generated migrations throu
 
 1. Install the Solana/Anchor deployment toolchain and generate a dedicated program keypair.
 2. Integrate and test an audited VRF provider on a local validator and devnet.
-3. Add end-to-end validator tests, economic fuzzing, and keeper/indexer replay tests.
+3. Expand end-to-end validator tests, economic fuzzing, and long-history indexer replay fixtures.
 4. Deploy to devnet, initialize config/vault PDAs, and verify program bytes.
 5. Complete independent security and legal reviews.
 6. Move authorities to multisig, configure production RPC/monitoring, and only then consider mainnet.

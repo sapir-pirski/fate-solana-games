@@ -16,7 +16,7 @@ FATE is split by responsibility so custody and game rules cannot accidentally le
 
 ## Trust boundaries
 
-The browser may prepare and request transactions but never holds treasury, oracle or administrative keys. API handlers authenticate wallet signatures, validate compliance and delegate policy decisions to server services. On-chain programs enforce escrow, settlement, timeouts and authority separation. The indexer is a read model and cannot decide outcomes.
+The browser may prepare and request transactions but never holds treasury, oracle or administrative keys. API handlers authenticate wallet signatures, validate compliance and delegate policy decisions to server services. On-chain programs enforce escrow, settlement, timeouts and authority separation. The finalized-only indexer stores canonical Anchor events in D1 and rebuildable query projections for the UI; it is a read model and cannot decide outcomes.
 
 ## Dependency direction
 

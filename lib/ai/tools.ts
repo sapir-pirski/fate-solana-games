@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { getDb } from "../../db";
 import { gameEntries, games, responsiblePlayLimits, transactionIntents } from "../../db/schema";
 import { BASE58, GAME_TYPES } from "./policy";
@@ -46,7 +46,7 @@ export async function executeAiTool(name: string, raw: Record<string, unknown>, 
   }
   if (name === "verify_fairness") {
     const address = String(raw.gameAddress);
-    const [game] = await getDb().select().from(games).where(eq(games.address, address)).limit(1);
+    const [game] = await getDb().select().from(games).where(or(eq(games.address, address), eq(games.chainAddress, address))).orderBy(desc(games.lastSlot)).limit(1);
     return game ? { verified: game.state === "settled" && Boolean(game.randomnessHex), evidence: game } : { verified: false, reason: "No indexed settlement evidence was found." };
   }
   if (name === "diagnose_transaction") {

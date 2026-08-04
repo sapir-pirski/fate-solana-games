@@ -59,6 +59,7 @@ export const games = sqliteTable(
   "games",
   {
     address: text("address").primaryKey(),
+    chainAddress: text("chain_address").notNull(),
     gameType: text("game_type").notNull(),
     numericId: text("numeric_id").notNull(),
     state: text("state").notNull(),
@@ -80,6 +81,7 @@ export const games = sqliteTable(
     uniqueIndex("games_type_numeric_id_uidx").on(table.gameType, table.numericId),
     index("games_type_state_idx").on(table.gameType, table.state),
     index("games_winner_idx").on(table.winner),
+    index("games_chain_address_idx").on(table.chainAddress, table.lastSlot),
   ],
 );
 
@@ -92,11 +94,12 @@ export const gameEntries = sqliteTable(
     role: text("role").notNull(),
     amountLamports: integer("amount_lamports").notNull(),
     signature: text("signature").notNull(),
+    eventIndex: integer("event_index").notNull().default(0),
     slot: integer("slot").notNull(),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    uniqueIndex("game_entries_signature_wallet_uidx").on(table.signature, table.walletAddress, table.role),
+    uniqueIndex("game_entries_event_uidx").on(table.signature, table.eventIndex, table.role, table.walletAddress),
     index("game_entries_game_idx").on(table.gameAddress, table.slot),
     index("game_entries_wallet_idx").on(table.walletAddress, table.slot),
   ],

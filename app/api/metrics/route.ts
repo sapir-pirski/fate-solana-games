@@ -10,7 +10,8 @@ export async function GET() {
   const dynamic: string[] = [];
   try {
     await Promise.all([ensureAuthSchema(), ensureAiSchema(), ensureGameSchema()]);
-    const [operations, jobs, sessions, aiUsage, aiTools, aiFeedback, aiConversations, gameActivity] = await Promise.all([
+    const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet";
+    const [operations, jobs, sessions, aiUsage, aiTools, aiFeedback, aiConversations, gameActivity, indexer] = await Promise.all([
       env.DB.prepare("SELECT status,COUNT(*) count FROM transaction_operations GROUP BY status").all<{ status: string; count: number }>(),
       env.DB.prepare("SELECT queue,status,COUNT(*) count,MAX(0,CAST(strftime('%s','now') AS INTEGER)-MIN(available_at)) oldest FROM background_jobs GROUP BY queue,status").all<{ queue: string; status: string; count: number; oldest: number }>(),
       env.DB.prepare("SELECT COUNT(*) sessions FROM wallet_sessions WHERE revoked_at IS NULL AND expires_at>CAST(strftime('%s','now') AS INTEGER)").first<{ sessions: number }>(),
@@ -19,6 +20,7 @@ export async function GET() {
       env.DB.prepare("SELECT rating,COUNT(*) count FROM ai_feedback GROUP BY rating").all<{ rating: number; count: number }>(),
       env.DB.prepare("SELECT COUNT(*) count FROM ai_conversations").first<{ count: number }>(),
       env.DB.prepare("SELECT game_type,state,COUNT(*) count,SUM(wager_lamports) wager_lamports,SUM(payout_lamports) payout_lamports,SUM(fee_lamports) fee_lamports FROM games GROUP BY game_type,state").all<{ game_type: string; state: string; count: number; wager_lamports: number; payout_lamports: number; fee_lamports: number }>(),
+      env.DB.prepare("SELECT last_slot,status,last_error,MAX(0,CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',updated_at) AS INTEGER)) lag_seconds FROM indexer_checkpoints WHERE consumer=?").bind(`fate-program:${cluster}`).first<{ last_slot: number; status: string; last_error: string | null; lag_seconds: number }>(),
     ]);
     for (const row of operations.results) dynamic.push(`fate_transaction_operations{status="${label(row.status)}"} ${row.count}`);
     for (const row of jobs.results) {
@@ -26,6 +28,9 @@ export async function GET() {
       dynamic.push(`fate_queue_oldest_age_seconds{queue="${label(row.queue)}",status="${label(row.status)}"} ${Math.max(0, row.oldest)}`);
     }
     dynamic.push(`fate_active_sessions ${sessions?.sessions ?? 0}`);
+    dynamic.push(`fate_indexer_checkpoint_slot{cluster="${label(cluster)}"} ${indexer?.last_slot ?? 0}`);
+    dynamic.push(`fate_indexer_healthy{cluster="${label(cluster)}"} ${indexer?.status === "healthy" ? 1 : 0}`);
+    dynamic.push(`fate_indexer_lag_seconds{cluster="${label(cluster)}"} ${indexer?.lag_seconds ?? 0}`);
     const inputPrice = Number(process.env.AI_INPUT_USD_PER_MILLION_TOKENS ?? 1.25);
     const outputPrice = Number(process.env.AI_OUTPUT_USD_PER_MILLION_TOKENS ?? 10);
     let estimatedCost = 0;

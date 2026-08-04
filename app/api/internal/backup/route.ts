@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { authorizeAutomation, unauthorized } from "@/server/services/internal-api";
 
 const TABLES = [
-  "event_logs", "wallet_sessions", "transaction_operations", "background_jobs",
+  "event_logs", "chain_events", "games", "game_entries", "indexer_checkpoints",
+  "wallet_sessions", "transaction_operations", "background_jobs",
   "ai_conversations", "ai_messages", "ai_tool_calls", "ai_usage", "ai_feedback",
   "responsible_play_limits", "compliance_profiles", "compliance_audit_events", "privacy_requests",
 ] as const;

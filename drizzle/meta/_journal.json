@@ -36,6 +36,20 @@
       "when": 1785784617860,
       "tag": "0004_fat_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785821660321,
+      "tag": "0005_legal_rattler",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785821978769,
+      "tag": "0006_productive_lily_hollister",
+      "breakpoints": true
     }
   ]
 }
