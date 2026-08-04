@@ -103,3 +103,7 @@ button:disabled{cursor:not-allowed}.text-link,.filters button,.presets button,.f
 @media(max-width:600px){.chance-ring strong{font-size:14px}.chance-ring span{font-size:6px!important;letter-spacing:.04em}.app-shell{padding-bottom:68px}.copilot-launcher{right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}.compliance-launcher{left:12px;bottom:calc(12px + env(safe-area-inset-bottom))}.copilot-panel{right:8px;bottom:calc(68px + env(safe-area-inset-bottom))}}
 .spatial-aurora,.spatial-grid{will-change:transform}
 .privacy-receipt a{width:max-content;color:var(--cyan);font-size:10px;text-decoration:underline;text-underline-offset:3px}
+
+/* Keep the responsive game navigation above the cinematic page layers. */
+.app-shell>.header{z-index:30}
+.mobile-nav{z-index:31;pointer-events:auto}

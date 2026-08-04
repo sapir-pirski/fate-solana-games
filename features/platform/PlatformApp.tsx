@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
+import { usePathname, useRouter } from "next/navigation";
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   ArrowUpRight,
@@ -50,6 +51,20 @@ type Toast = { title: string; text: string } | null;
 type WalletOption = { name: string; icon: string };
 type WalletClient = ReturnType<typeof useSolanaWallet>;
 
+const VIEW_PATHS: Record<View, string> = {
+  jackpot: "/jackpot",
+  coinflip: "/coinflip",
+  daily: "/daily-case",
+  history: "/history",
+};
+const PATH_VIEWS: Record<string, View> = {
+  "/": "jackpot",
+  "/jackpot": "jackpot",
+  "/coinflip": "coinflip",
+  "/daily-case": "daily",
+  "/history": "history",
+};
+
 const WALLET_CATALOG = [
   { name: "Phantom", mark: "P", color: "#ab9ff2", install: "https://phantom.com/download", mobile: (url: string) => `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(new URL(url).origin)}` },
   { name: "Backpack", mark: "B", color: "#e33e3f", install: "https://backpack.app/download", mobile: () => "https://backpack.app/download" },
@@ -74,12 +89,13 @@ const formatLamportsInput = (lamports: bigint) => { const whole=lamports/1_000_0
 
 
 function ParticleField() {
+  const hydrated = useHydrated();
   const reduceMotion = useReducedMotion();
   const particles = useMemo(() => Array.from({ length: 22 }, (_, i) => ({
     left: `${(i * 43) % 97}%`, top: `${18 + (i * 29) % 72}%`, delay: (i % 8) * 0.33,
     size: 2 + (i % 3), color: i % 4 === 0 ? "#c8ff4d" : i % 3 === 0 ? "#53e7ff" : "#8b5cf6",
   })), []);
-  if (reduceMotion) return null;
+  if (hydrated && reduceMotion) return null;
   return <div className="particle-field" aria-hidden="true">{particles.map((p, i) => <motion.i key={i} style={{ left: p.left, top: p.top, width: p.size, height: p.size, background: p.color }} animate={{ y: [0, -18, 0], opacity: [.08, .75, .08], scale: [.7, 1.4, .7] }} transition={{ duration: 3.2 + (i % 4), delay: p.delay, repeat: Infinity, ease: "easeInOut" }}/>)}</div>;
 }
 
@@ -363,7 +379,22 @@ function WalletModal({ open, wallets, connecting, error, selected, close, select
 }
 
 export default function PlatformApp({ initialView = "jackpot" }: { initialView?: View }) {
-  const [view,setView]=useState<View>(initialView); const [toast,setToast]=useState<Toast>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+  const [view, setCurrentView] = useState<View>(initialView);
+  useEffect(() => {
+    const nextView = PATH_VIEWS[pathname] ?? initialView;
+    const timer = window.setTimeout(() => {
+      setCurrentView(current => current === nextView ? current : nextView);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialView, pathname]);
+  const setView = useCallback((nextView: View) => {
+    setCurrentView(nextView);
+    const destination = VIEW_PATHS[nextView];
+    if (pathname !== destination) router.push(destination);
+  }, [pathname, router]);
+  const [toast,setToast]=useState<Toast>(null);
   const [walletPicker,setWalletPicker]=useState(false);
   const [connectingWallet,setConnectingWallet]=useState<string|null>(null);
   const hydrated=useHydrated(); const reduceMotion=useReducedMotion();
