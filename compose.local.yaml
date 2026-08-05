@@ -108,6 +108,9 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in local.env}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Grafana 12 otherwise tries TraceQL over gRPC against Tempo's HTTP
+      # listener and the datasource query fails before the panel can render.
+      GF_FEATURE_TOGGLES_TRACEQLSTREAMING: "false"
     ports:
       - 127.0.0.1:${GRAFANA_PORT:-3001}:3000
     volumes:

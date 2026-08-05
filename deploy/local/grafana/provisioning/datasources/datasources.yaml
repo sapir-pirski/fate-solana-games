@@ -27,6 +27,11 @@ datasources:
     url: http://tempo:3200
     editable: false
     jsonData:
+      # The local Tempo endpoint on 3200 is HTTP. Disable Grafana's gRPC
+      # streaming path so TraceQL search uses Tempo's working HTTP API.
+      streamingEnabled:
+        search: false
+        metrics: false
       tracesToLogsV2:
         datasourceUid: loki
         spanStartTimeShift: -5m
