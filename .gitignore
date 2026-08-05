@@ -14,6 +14,7 @@
 /coverage
 /test-results/
 /playwright-report/
+/.nyc_output/
 
 # next.js
 /.next/
@@ -23,6 +24,16 @@
 # misc
 .DS_Store
 *.pem
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*-keypair.json
+/.cache/
+/.turbo/
+/.vite/
+.eslintcache
 
 # debug
 npm-debug.log*
@@ -34,6 +45,8 @@ yarn-error.log*
 .env*
 !.env.example
 /local.env
+.dev.vars*
+!.dev.vars.example
 
 # vercel
 .vercel
@@ -49,3 +62,4 @@ next-env.d.ts
 /target/
 /.anchor/
 test-ledger/
+/backups/
