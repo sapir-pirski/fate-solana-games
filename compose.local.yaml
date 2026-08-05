@@ -14,7 +14,9 @@ services:
     environment:
       APP_REVISION: local-compose
       PORT: "3000"
-      WRANGLER_LOG_LEVEL: warn
+      # Application JSON events are emitted at info; keep them visible so Alloy
+      # can normalize them into Loki labels for the local dashboards.
+      WRANGLER_LOG_LEVEL: info
       INDEXER_AUTH_TOKEN: ${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}
       # Local fallback keeps existing installations working; production uses a distinct secret.
       AUTOMATION_TOKEN: ${AUTOMATION_TOKEN:-${INDEXER_AUTH_TOKEN:?Set INDEXER_AUTH_TOKEN in local.env}}

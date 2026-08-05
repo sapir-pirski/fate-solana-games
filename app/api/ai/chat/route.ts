@@ -46,6 +46,7 @@ function streamAnswer(answer: string, metadata: Record<string, unknown>, setCook
 
 async function handlePost(request: Request) {
   const requestId = crypto.randomUUID();
+  jsonLog("info", "ai_chat_received", "AI chat request received", { component: "ai", requestId, stage: "request" });
   try {
     if (!requireSameOrigin(request)) return Response.json({ code: "INVALID_ORIGIN", requestId }, { status: 403 });
     const body = await request.json() as { message?: unknown; conversationId?: unknown; walletAddress?: unknown };
@@ -63,6 +64,10 @@ async function handlePost(request: Request) {
     const anonymousCookieHeader = !session && !validAnonymousToken ? aiAnonymousCookie(anonymousToken!) : undefined;
     const rateSubject = session?.walletAddress ?? ownerKey;
     const rateKey = walletHash(session?.walletAddress) ?? ownerKey;
+    // OpenAI limits safety_identifier to 64 characters. Hash every subject so
+    // anonymous cookie identifiers and wallet identifiers have one stable,
+    // privacy-preserving representation with an exact bounded length.
+    const safetyIdentifier = sha256(`fate-ai:${rateKey}`);
     const limit = Math.max(1, Math.min(500, Number(process.env.AI_MAX_REQUESTS_PER_WALLET_DAY ?? 50)));
     const rate = await enforceRateLimit({ scope: "ai_chat", subject: rateSubject, limit, windowSeconds: 86_400 });
     if (!rate.allowed) return rateLimitResponse(rate);
@@ -104,7 +109,7 @@ async function handlePost(request: Request) {
     const client = new OpenAI({ apiKey, maxRetries: 2, timeout: Math.max(5_000, Math.min(60_000, Number(process.env.AI_PROVIDER_TIMEOUT_MS ?? 30_000))) }); const model = safeModel(process.env.OPENAI_MODEL);
     let responseInput: unknown[] = history.map(item => ({ role: item.role === "assistant" ? "assistant" as const : "user" as const, content: item.content }));
     const providerStarted = Date.now();
-    let response = await withSpan("ai.provider.response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: rateKey }), request.headers.get("traceparent"));
+    let response = await withSpan("ai.provider.response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: safetyIdentifier }), request.headers.get("traceparent"));
     let requestUsage = await recordProviderUsage(response, { conversationId, walletHash: rateKey, requestId, model, round: 0 });
     let toolRounds = 0;
     while (toolRounds < MAX_TOOL_ROUNDS) {
@@ -123,7 +128,7 @@ async function handlePost(request: Request) {
       }
       responseInput = [...responseInput, ...response.output, ...outputs];
       toolRounds += 1;
-      response = await withSpan("ai.provider.tool_response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: rateKey }), request.headers.get("traceparent"));
+      response = await withSpan("ai.provider.tool_response", { component: "ai", model }, () => client.responses.create({ model, instructions: FATE_AI_SYSTEM_PROMPT, input: responseInput as never, tools: AI_TOOLS as never, reasoning: { effort: "low" }, text: { verbosity: "medium" }, store: false, safety_identifier: safetyIdentifier }), request.headers.get("traceparent"));
       requestUsage = addAiUsage(requestUsage, await recordProviderUsage(response, { conversationId, walletHash: rateKey, requestId, model, round: toolRounds }));
     }
     const answer = response.output_text || "I could not produce a grounded answer. Please try a narrower question.";

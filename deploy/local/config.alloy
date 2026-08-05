@@ -27,8 +27,43 @@ discovery.relabel "fate" {
 loki.source.docker "fate" {
   host       = "unix:///var/run/docker.sock"
   targets    = discovery.relabel.fate.output
-  forward_to = [loki.write.local.receiver]
+  forward_to = [loki.process.fate.receiver]
   labels     = { stack = "fate-local" }
+}
+
+loki.process "fate" {
+  // Wrangler decorates application console output before Docker receives it.
+  // Extract the embedded JSON for app records while forwarding every other
+  // container line unchanged as a raw fallback.
+  stage.match {
+    selector = `{service="app"} |~ "\\{.*\\}"`
+
+    stage.regex {
+      expression = `(?s)^[^{]*(?P<json_payload>\{.*\})[^}]*$`
+    }
+
+    stage.output {
+      source = "json_payload"
+    }
+
+    stage.json {
+      expressions = {
+        component = "component",
+        event     = "event",
+        level     = "level",
+      }
+    }
+
+    stage.labels {
+      values = {
+        component = "",
+        event     = "",
+        level     = "",
+      }
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
 }
 
 loki.write "local" {
