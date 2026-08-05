@@ -1,6 +1,5 @@
 import { env } from "cloudflare:workers";
 import { ensureAuthSchema, ensureGameSchema } from "../../../../db";
-import { syncSolanaIndexer } from "@/server/services/solana-indexer";
 
 const allowedTypes = new Set(["jackpot", "coinflip", "daily"]);
 const allowedStates = new Set(["open", "randomness_requested", "settled", "refunded", "closed"]);
@@ -15,7 +14,6 @@ export async function GET(request: Request) {
   }
 
   await Promise.all([ensureAuthSchema(), ensureGameSchema()]);
-  await syncSolanaIndexer({ db: env.DB, mode: "live" }).catch(() => undefined);
   const predicates: string[] = [];
   const bindings: string[] = [];
   if (type) { predicates.push("game_type=?"); bindings.push(type); }

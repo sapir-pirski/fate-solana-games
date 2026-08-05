@@ -33,6 +33,12 @@ test("the finalized Solana index has a writer and an authenticated scheduler rou
   assert.match(route, /syncSolanaIndexer/);
 });
 
+test("public game reads do not trigger Solana RPC synchronization", () => {
+  const route = read("app/api/indexer/games/route.ts");
+  assert.doesNotMatch(route, /syncSolanaIndexer/);
+  assert.doesNotMatch(route, /server\/services\/solana-indexer/);
+});
+
 test("database backup and restore share a complete manifest and require guarded replacement", () => {
   const manifest = read("lib/database-backup.ts");
   const backup = read("app/api/internal/backup/route.ts");

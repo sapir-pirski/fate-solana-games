@@ -87,6 +87,14 @@ services:
       - tempo_data:/var/tempo
     networks: [frontend, observability]
 
+  renderer:
+    image: grafana/grafana-image-renderer@sha256:7fcea1db9aef1428f18bb820ec9e7ae4e25a430679b9fa8e08d56f2195424234
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      GOMEMLIMIT: 900MiB
+    networks: [frontend]
+
   alloy:
     image: grafana/alloy:v1.11.3
     restart: unless-stopped
@@ -108,6 +116,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in local.env}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_RENDERING_SERVER_URL: http://renderer:8081/render
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
       # Grafana 12 otherwise tries TraceQL over gRPC against Tempo's HTTP
       # listener and the datasource query fails before the panel can render.
       GF_FEATURE_TOGGLES_TRACEQLSTREAMING: "false"
@@ -117,7 +127,7 @@ services:
       - ./deploy/local/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/local/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-    depends_on: [prometheus, loki, tempo]
+    depends_on: [prometheus, loki, tempo, renderer]
     networks: [frontend, observability]
 
 networks:

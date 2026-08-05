@@ -54,7 +54,7 @@ Product events are queued in IndexedDB, flushed asynchronously in bounded batche
 
 Financial state is separate from product analytics. `chain_events` is replay-safe via transaction position uniqueness; `games` and `game_entries` are query projections; `transaction_operations` is the authoritative wallet transaction lifecycle and pending-spend reservation store; `indexer_checkpoints` records consumer progress and health.
 
-The server-side Solana indexer reads only `finalized` program transactions, decodes Anchor events, and writes the raw event plus its query projections in one D1 batch. Public game reads trigger a bounded live synchronization; `POST /api/internal/indexer` performs authenticated live and historical backfill work for the scheduled operations workflow. Cursor claims prevent overlapping workers, failed runs retain the last durable cursor, and every mutation is idempotent and slot-monotonic so retries and older backfill pages cannot overwrite newer state.
+The server-side Solana indexer reads only `finalized` program transactions, decodes Anchor events, and writes the raw event plus its query projections in one D1 batch. Public game reads are side-effect free; `POST /api/internal/indexer` performs authenticated live and historical backfill work for the scheduled operations workflow. Cursor claims prevent overlapping workers, failed runs retain the last durable cursor, and every mutation is idempotent and slot-monotonic so retries and older backfill pages cannot overwrite newer state.
 
 ## AI and agents
 
