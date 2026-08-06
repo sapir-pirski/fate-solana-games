@@ -1,7 +1,11 @@
 # Devnet acceptance record
 
 Status: **BLOCKED — transactional acceptance has not started**  
-Evidence date: 2026-08-01  
+
+Devnet evidence date: 2026-08-01
+
+Application validation refreshed: 2026-08-06 at revision `f31e930`
+
 Target program: `Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ`
 
 ## Verified gates
@@ -11,7 +15,7 @@ Target program: `Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ`
 | Public application health | Pass | Sites production health reports devnet and managed database `ok` |
 | Solana devnet RPC | Pass | `getHealth` returned `ok` |
 | Program compilation | Pass | 7 Rust program tests pass on Rust 1.89 |
-| Application/security suite | Pass | production build and 38 tests pass |
+| Application/security suite | Pass | production build, 59 policy/security tests, 41 TypeScript unit tests, and 1 D1 integration test pass |
 | Program deployed at configured ID | **Fail** | finalized `getAccountInfo` returned `value: null` at slot 480440319 |
 | Config PDA and multisig authorities | Blocked | cannot exist or be verified before program deployment |
 | Real Jackpot/Coinflip/Daily transactions | Blocked | no executable program exists at the configured address |

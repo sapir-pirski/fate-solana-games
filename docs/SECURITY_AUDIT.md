@@ -1,14 +1,20 @@
 # Internal security review
 
 Review date: 2026-08-01  
-Reviewed revision: update this field to the immutable external-audit commit after remediation.  
+
+Reviewed revision: no immutable external-audit revision has been assigned; the repository remains pre-audit.
+
 Conclusion: suitable only for devnet engineering use; not approved for real-value custody or mainnet.
 
 ## Work performed
 
 - Manual review of Anchor account constraints, PDA derivation, vault transfers, fees, refunds, timeouts, closing, admin transfer/timelock and randomness binding.
 - Manual review of wallet challenge/session handling, mutation-origin checks, transaction state recovery, rate limits, queues/leases, compliance gates, AI boundaries, internal automation and backups.
-- Existing build and 34 policy/security tests executed successfully before this review.
+- The then-current build and 34 policy/security tests executed successfully before this review.
+- Follow-up validation on 2026-08-06 at revision `f31e930` passed the
+  production build, 59 policy/security tests, 41 TypeScript unit tests, and 1
+  D1 integration test. This does not change the audit conclusion or substitute
+  for transactional acceptance.
 - Security CI added for npm advisory checks, CodeQL, Rust formatting, Clippy, tests and `cargo audit`.
 - Local advisory and Rust tool execution could not be independently repeated in this environment: registry DNS was unavailable and the Rust toolchain is not installed. CI is the required evidence source for those checks.
 
@@ -34,9 +40,13 @@ The backend confirms that a supplied signature landed, but its transaction-opera
 
 Daily protected JSON export exists, but no disposable-database restore and record-count/hash verification is enforced in CI. Add a versioned restore utility and monthly recovery drill before relying on the backup for recovery.
 
-### FATE-SEC-006 — GitHub scheduled operations not activated (Medium, open)
+### FATE-SEC-006 — GitHub scheduled operations not fully evidenced (Medium, open)
 
-The production operations workflow is committed, but the local GitHub identity was expired during configuration, so repository-secret installation and observed scheduled runs are not evidenced. Reauthenticate, set `FATE_AUTOMATION_TOKEN`, run the workflow manually and retain the successful run.
+Push-triggered GitHub Actions workflows have executed for the public repository.
+Repository-secret installation and successful scheduled production operations
+are still not evidenced. Configure `FATE_AUTOMATION_TOKEN`, run the operations
+workflow manually, observe its scheduled execution, and retain the successful
+runs.
 
 ### FATE-SEC-007 — Provider and legal controls are devnet demonstrations (High for mainnet, accepted for devnet)
 

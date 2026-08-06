@@ -546,7 +546,7 @@ The fixture populates representative transaction states, game activity, on-chain
 
 ```bash
 git clone https://github.com/Sapir-pirski/fate-solana-games.git
-cd gaming_platform
+cd fate-solana-games
 npm ci
 cp .env.example .env.local
 npm run dev
@@ -638,6 +638,19 @@ The static randomness-account variables exist only for a one-request local/devne
 | `OTEL_SERVICE_NAME` | Service identity used in logs and traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP base URL; blank disables trace export without affecting gameplay |
 | `APP_REVISION` | Build/revision label exposed in health and telemetry |
+
+### Local observability stack
+
+These variables are read from `local.env` when running the complete Docker Compose platform:
+
+| Variable | Purpose |
+| --- | --- |
+| `FATE_LOCAL_PORT` | Host port for the local application; defaults to `3100` |
+| `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | Local Grafana credentials used by dashboard access and screenshot rendering |
+| `GRAFANA_PORT` | Host port for Grafana; defaults to `3001` |
+| `PROMETHEUS_PORT` | Host port for Prometheus; defaults to `9090` |
+| `LOKI_PORT` | Host port for Loki; defaults to `3101` |
+| `TEMPO_PORT` | Host port for Tempo; defaults to `3200` |
 
 ## API surface
 

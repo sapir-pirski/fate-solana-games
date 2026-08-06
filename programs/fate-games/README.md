@@ -44,7 +44,8 @@ proposal, application, or cancellation emits an on-chain event.
 
 Program upgrade authority is controlled by the BPF loader rather than this
 program. It must be assigned to a different Squads vault from configuration,
-pause, treasury, and deployment identities. See `docs/MULTISIG_RUNBOOK.md`.
+pause, treasury, and deployment identities. See the
+[multisig runbook](../../docs/MULTISIG_RUNBOOK.md).
 
 ## Randomness boundary
 
