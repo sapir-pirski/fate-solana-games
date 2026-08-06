@@ -15,7 +15,7 @@ jobs:
       SOLANA_RPC_URL: https://api.devnet.solana.com
       FATE_PROGRAM_ID: Fg6PaFpoGXkYsidMpWxqSWY4vF8zqRkMnJx9QpMvdWvZ
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
@@ -34,7 +34,7 @@ jobs:
   rust-program:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.89.0
         with: { components: rustfmt, clippy }
       - run: cargo fmt --all -- --check
