@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run security:sbom > sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: sbom, path: sbom.cdx.json, retention-days: 30 }
 
   codeql:
