@@ -1,4 +1,7 @@
 #![allow(clippy::result_large_err)]
+// Anchor's entrypoint macros still emit Solana target cfg values that newer
+// Rust check-cfg validation cannot discover from this crate.
+#![allow(unexpected_cfgs)]
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, Transfer};
@@ -24,6 +27,7 @@ const CONFIG_TIMELOCK_SECONDS: i64 = 86_400;
 pub mod fate_games {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn initialize_config(
         ctx: Context<InitializeConfig>,
         randomness_program: Pubkey,
@@ -991,6 +995,7 @@ fn validate_randomness_account(config: &Config, account: &AccountInfo) -> Result
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn bind_randomness(
     config: &Config,
     account: &AccountInfo,

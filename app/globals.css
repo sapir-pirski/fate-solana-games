@@ -107,3 +107,4 @@ button:disabled{cursor:not-allowed}.text-link,.filters button,.presets button,.f
 /* Keep the responsive game navigation above the cinematic page layers. */
 .app-shell>.header{z-index:30}
 .mobile-nav{z-index:31;pointer-events:auto}
+.app-shell[data-hydrated="false"] button{pointer-events:none}

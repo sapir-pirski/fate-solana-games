@@ -10,6 +10,7 @@ crate-type = ["cdylib", "lib"]
 name = "fate_games"
 
 [features]
+anchor-debug = []
 default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
