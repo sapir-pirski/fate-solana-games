@@ -7,6 +7,7 @@ const sourceConfig = new URL("../dist/server/wrangler.json", import.meta.url);
 const runtimeConfig = new URL("../dist/server/.wrangler.runtime.json", import.meta.url).pathname;
 const allowedVariables = [
   "APP_REVISION",
+  "LOCAL_OBSERVABILITY_FIXTURES",
   "AUTOMATION_TOKEN",
   "RESTORE_MAX_BYTES",
   "RESTORE_MAX_ROWS",

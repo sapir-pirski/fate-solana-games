@@ -1,0 +1,125 @@
+{
+  "capturedAt": "2026-08-06T07:10:32.235Z",
+  "grafanaRecapturedAt": "2026-08-06T07:46:46Z",
+  "publicBase": "https://fate-solana-games.sapirp.chatgpt.site",
+  "grafanaBase": "http://127.0.0.1:3001",
+  "files": [
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "home",
+      "route": "/",
+      "file": "web/desktop/home.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "jackpot",
+      "route": "/jackpot",
+      "file": "web/desktop/jackpot.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "coinflip",
+      "route": "/coinflip",
+      "file": "web/desktop/coinflip.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "daily-case",
+      "route": "/daily-case",
+      "file": "web/desktop/daily-case.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "history",
+      "route": "/history",
+      "file": "web/desktop/history.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "fairness-verifier",
+      "route": "/verify",
+      "file": "web/desktop/fairness-verifier.png"
+    },
+    {
+      "kind": "web",
+      "device": "desktop",
+      "name": "legal",
+      "route": "/legal",
+      "file": "web/desktop/legal.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "home",
+      "route": "/",
+      "file": "web/mobile/home.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "jackpot",
+      "route": "/jackpot",
+      "file": "web/mobile/jackpot.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "coinflip",
+      "route": "/coinflip",
+      "file": "web/mobile/coinflip.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "daily-case",
+      "route": "/daily-case",
+      "file": "web/mobile/daily-case.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "history",
+      "route": "/history",
+      "file": "web/mobile/history.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "fairness-verifier",
+      "route": "/verify",
+      "file": "web/mobile/fairness-verifier.png"
+    },
+    {
+      "kind": "web",
+      "device": "mobile",
+      "name": "legal",
+      "route": "/legal",
+      "file": "web/mobile/legal.png"
+    },
+    {
+      "kind": "grafana",
+      "name": "fate-overview",
+      "uid": "fate-operations",
+      "file": "grafana/fate-overview.png"
+    },
+    {
+      "kind": "grafana",
+      "name": "fate-diagnostics",
+      "uid": "fate-local",
+      "file": "grafana/fate-diagnostics.png"
+    },
+    {
+      "kind": "grafana",
+      "name": "fate-ai-observability",
+      "uid": "fate-ai",
+      "file": "grafana/fate-ai-observability.png"
+    }
+  ],
+  "pageErrors": []
+}

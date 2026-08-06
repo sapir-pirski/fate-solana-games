@@ -23,7 +23,10 @@ export async function GET() {
       env.DB.prepare("SELECT game_type,state,COUNT(*) count,SUM(wager_lamports) wager_lamports,SUM(payout_lamports) payout_lamports,SUM(fee_lamports) fee_lamports FROM games GROUP BY game_type,state").all<{ game_type: string; state: string; count: number; wager_lamports: number; payout_lamports: number; fee_lamports: number }>(),
       env.DB.prepare("SELECT last_slot,status,last_error,MAX(0,CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',updated_at) AS INTEGER)) lag_seconds FROM indexer_checkpoints WHERE consumer=?").bind(`fate-program:${cluster}`).first<{ last_slot: number; status: string; last_error: string | null; lag_seconds: number }>(),
     ]);
-    for (const row of operations.results) dynamic.push(`fate_transaction_operations{status="${label(row.status)}"} ${row.count}`);
+    const expectedOperationStates = ["draft", "submitted", "confirmed", "finalized", "failed", "rejected", "expired"];
+    const operationCounts = new Map(operations.results.map(row => [row.status, row.count]));
+    for (const status of expectedOperationStates) dynamic.push(`fate_transaction_operations{status="${status}"} ${operationCounts.get(status) ?? 0}`);
+    for (const row of operations.results) if (!expectedOperationStates.includes(row.status)) dynamic.push(`fate_transaction_operations{status="${label(row.status)}"} ${row.count}`);
     for (const row of jobs.results) {
       dynamic.push(`fate_queue_jobs{queue="${label(row.queue)}",status="${label(row.status)}"} ${row.count}`);
       dynamic.push(`fate_queue_oldest_age_seconds{queue="${label(row.queue)}",status="${label(row.status)}"} ${Math.max(0, row.oldest)}`);
@@ -48,7 +51,9 @@ export async function GET() {
       dynamic.push(`fate_ai_tool_calls{tool="${label(row.tool_name)}",status="${label(row.status)}"} ${row.count}`);
       dynamic.push(`fate_ai_tool_duration_ms{tool="${label(row.tool_name)}",status="${label(row.status)}"} ${row.average_duration_ms}`);
     }
-    for (const row of aiFeedback.results) dynamic.push(`fate_ai_feedback{rating="${row.rating > 0 ? "positive" : "negative"}"} ${row.count}`);
+    const feedbackCounts = new Map(aiFeedback.results.map(row => [row.rating > 0 ? "positive" : "negative", row.count]));
+    dynamic.push(`fate_ai_feedback{rating="positive"} ${feedbackCounts.get("positive") ?? 0}`);
+    dynamic.push(`fate_ai_feedback{rating="negative"} ${feedbackCounts.get("negative") ?? 0}`);
     dynamic.push(`fate_ai_conversations ${aiConversations?.count ?? 0}`);
     dynamic.push(`fate_ai_estimated_cost_usd ${estimatedCost}`);
     dynamic.push(`fate_ai_monthly_budget_usd ${Math.max(0, Number(process.env.AI_MONTHLY_BUDGET_USD ?? 25))}`);

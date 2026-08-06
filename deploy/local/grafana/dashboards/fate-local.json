@@ -57,7 +57,7 @@
       "description": "Green is available, red is unavailable and grey is missing telemetry.",
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "up{job=~\"$service\"}", "legendFormat": "{{job}}", "refId": "A" }],
+      "targets": [{ "expr": "up{job=~\"$service\"}", "interval": "1m", "legendFormat": "{{job}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "fillOpacity": 85, "lineWidth": 0 }, "mappings": [{ "type": "value", "options": { "0": { "color": "red", "text": "Down" }, "1": { "color": "green", "text": "Available" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
       "options": { "colWidth": 0.9, "legend": { "displayMode": "hidden", "placement": "bottom", "showLegend": false }, "rowHeight": 0.8, "showValue": "auto", "tooltip": { "mode": "single", "sort": "none" } }
     },
@@ -81,20 +81,26 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "(sum by (span) (rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum by (span) (rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)) or vector(0)", "legendFormat": "{{span}}", "refId": "A" }
+        { "expr": "(sum by (span) (rate(fate_span_duration_ms_sum[$__rate_interval])) / clamp_min(sum by (span) (rate(fate_span_duration_ms_count[$__rate_interval])), 0.001)) or label_replace(vector(0), \"span\", \"no activity\", \"\", \"\")", "legendFormat": "{{span}}", "refId": "A" }
       ],
       "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": { "group": "A", "mode": "none" } } }, "overrides": [] },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 8,
-      "type": "barchart",
+      "type": "bargauge",
       "title": "Transaction operations by state",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "fate_transaction_operations or vector(0)", "legendFormat": "{{status}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "decimals": 0, "min": 0 }, "overrides": [] },
-      "options": { "barRadius": 0, "barWidth": 0.8, "fullHighlight": false, "groupWidth": 0.7, "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "orientation": "auto", "showValue": "auto", "stacking": "normal", "tooltip": { "mode": "multi", "sort": "desc" }, "xTickLabelRotation": 0, "xTickLabelSpacing": 0 }
+      "targets": [
+        { "expr": "sum(fate_transaction_operations{status=\"draft\"})", "legendFormat": "draft", "instant": true, "refId": "A" },
+        { "expr": "sum(fate_transaction_operations{status=\"submitted\"})", "legendFormat": "submitted", "instant": true, "refId": "B" },
+        { "expr": "sum(fate_transaction_operations{status=\"confirmed\"})", "legendFormat": "confirmed", "instant": true, "refId": "C" },
+        { "expr": "sum(fate_transaction_operations{status=\"finalized\"})", "legendFormat": "finalized", "instant": true, "refId": "D" },
+        { "expr": "sum(fate_transaction_operations{status=~\"failed|rejected|expired\"})", "legendFormat": "failed / expired", "instant": true, "refId": "E" }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 0, "min": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [{ "matcher": { "id": "byName", "options": "failed / expired" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }] },
+      "options": { "displayMode": "gradient", "minVizHeight": 28, "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "showUnfilled": true, "text": { "titleSize": 13, "valueSize": 18 }, "valueMode": "color" }
     },
     {
       "id": 9,
@@ -103,10 +109,10 @@
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "fate_database_operation_duration_ms_sum{backend=\"d1\"} / clamp_min(fate_database_operation_duration_ms_count{backend=\"d1\"}, 1) or vector(0)", "legendFormat": "D1 average", "refId": "A" },
-        { "expr": "fate_solana_rpc_latency_ms or vector(0)", "legendFormat": "RPC latency", "refId": "B" }
+        { "expr": "sum(fate_database_operation_duration_ms_sum{backend=\"d1\"}) / clamp_min(sum(fate_database_operation_duration_ms_count{backend=\"d1\"}), 1) or vector(0)", "legendFormat": "D1 average", "refId": "A" },
+        { "expr": "fate_solana_rpc_latency_ms or on() vector(0)", "legendFormat": "RPC {{provider}}", "refId": "B" }
       ],
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byName", "options": "RPC latency" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } }, "overrides": [{ "matcher": { "id": "byRegexp", "options": "/^RPC/" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
       "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
@@ -116,11 +122,11 @@
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "fate_database_metrics_available or vector(0)", "legendFormat": "D1 available", "refId": "A" },
-        { "expr": "fate:transaction_stuck:count or vector(0)", "legendFormat": "Pending confirmations", "refId": "B" },
-        { "expr": "fate_active_sessions or vector(0)", "legendFormat": "Active sessions", "refId": "C" }
+        { "expr": "max(fate_database_metrics_available) or vector(0)", "legendFormat": "D1 available", "refId": "A" },
+        { "expr": "sum(fate:transaction_stuck:count) or vector(0)", "legendFormat": "Pending confirmations", "refId": "B" },
+        { "expr": "max(fate_active_sessions) or vector(0)", "legendFormat": "Active sessions", "refId": "C" }
       ],
-      "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } }, "overrides": [{ "matcher": { "id": "byName", "options": "D1 available" }, "properties": [{ "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }] }] },
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true }
     },
     {
@@ -163,5 +169,5 @@
   "timezone": "browser",
   "title": "FATE Diagnostics",
   "uid": "fate-local",
-  "version": 3
+  "version": 6
 }

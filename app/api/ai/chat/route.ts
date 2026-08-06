@@ -119,11 +119,11 @@ async function handlePost(request: Request) {
       if (roundBudgetBlock) return roundBudgetBlock;
       const outputs: Array<{ type: "function_call_output"; call_id: string; output: string }> = [];
       for (const call of calls) {
-        const started = Date.now(); let result: unknown; let status = "success"; let errorCode: string | null = null;
+        const started = performance.now(); let result: unknown; let status = "success"; let errorCode: string | null = null;
         try { result = await executeAiTool(call.name, JSON.parse(call.arguments) as Record<string, unknown>, { authenticatedWallet: session?.walletAddress ?? null }); }
         catch (error) { status = "failure"; errorCode = redactError(error); result = { error: errorCode }; }
         const output = JSON.stringify(result).slice(0, 20_000);
-        await getDb().insert(aiToolCalls).values({ id: crypto.randomUUID(), conversationId, callId: call.call_id, toolName: call.name, argumentsJson: call.arguments.slice(0, 4_000), resultJson: output, status, durationMs: Date.now() - started, errorCode }).onConflictDoNothing({ target: aiToolCalls.callId });
+        await getDb().insert(aiToolCalls).values({ id: crypto.randomUUID(), conversationId, callId: call.call_id, toolName: call.name, argumentsJson: call.arguments.slice(0, 4_000), resultJson: output, status, durationMs: Math.max(0.001, performance.now() - started), errorCode }).onConflictDoNothing({ target: aiToolCalls.callId });
         outputs.push({ type: "function_call_output", call_id: call.call_id, output });
       }
       responseInput = [...responseInput, ...response.output, ...outputs];

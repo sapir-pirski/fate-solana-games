@@ -1,4 +1,4 @@
-import { increment, jsonLog, observe, withSpan } from "@/lib/telemetry";
+import { increment, jsonLog, observe, setGauge, withSpan } from "@/lib/telemetry";
 import { base58Decode, decodeFateLogEvents, projectFateEvent, type ProjectionContext } from "@/lib/solana/indexer-events";
 
 type SignatureInfo = { signature: string; slot: number; err: unknown; blockTime: number | null; confirmationStatus?: string | null };
@@ -54,10 +54,14 @@ function configuredRpcUrls(cluster: string, input?: string[]) {
 
 function createRpc(fetchImpl: typeof fetch, endpoints: string[]) {
   let requestId = 0;
+  const availableProviders = new Set<string>();
+  setGauge("fate_solana_rpc_providers_available", 0);
   return async function rpc<T>(method: string, params: unknown[]): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt < Math.max(2, endpoints.length); attempt += 1) {
       const endpoint = endpoints[attempt % endpoints.length];
+      const provider = attempt % endpoints.length === 0 ? "primary" : `fallback-${attempt % endpoints.length}`;
+      const started = Date.now();
       try {
         const response = await fetchImpl(endpoint, {
           method: "POST",
@@ -68,8 +72,14 @@ function createRpc(fetchImpl: typeof fetch, endpoints: string[]) {
         if (!response.ok) throw new Error(`RPC_HTTP_${response.status}`);
         const body = await response.json() as { result?: T; error?: { code?: number } };
         if (body.error || body.result === undefined) throw new Error(`RPC_${body.error?.code ?? "INVALID_RESPONSE"}`);
+        availableProviders.add(endpoint);
+        setGauge("fate_solana_rpc_providers_available", availableProviders.size);
+        setGauge("fate_solana_rpc_latency_ms", Date.now() - started, { provider });
         return body.result;
       } catch (error) {
+        availableProviders.delete(endpoint);
+        setGauge("fate_solana_rpc_providers_available", availableProviders.size);
+        setGauge("fate_solana_rpc_latency_ms", Date.now() - started, { provider });
         lastError = error;
         if (attempt + 1 < Math.max(2, endpoints.length)) await sleep(150 * (2 ** attempt) + Math.floor(Math.random() * 100));
       }

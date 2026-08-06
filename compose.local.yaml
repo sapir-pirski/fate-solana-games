@@ -13,6 +13,7 @@ services:
     mem_limit: 1g
     environment:
       APP_REVISION: local-compose
+      LOCAL_OBSERVABILITY_FIXTURES: "true"
       PORT: "3000"
       # Application JSON events are emitted at info; keep them visible so Alloy
       # can normalize them into Loki labels for the local dashboards.
