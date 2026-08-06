@@ -1,0 +1,5 @@
+# RUSTSEC-2026-0235 applies to rkyv 0.7 archive validation. The crate appears
+# only as rust_decimal's disabled optional feature in Cargo.lock; it is absent
+# from `cargo tree --target all -i rkyv` and is not compiled into any target.
+[advisories]
+ignore = ["RUSTSEC-2026-0235"]
